@@ -99,3 +99,26 @@ Cloudflare quick tunnel (`CALLBACK_BASE_URL`).
 
 **Next:** merge worker PR #5 (CA certs) so GHCR publishes the fixed runtime; then
 W6 — JDK worker images with clone + Maven graph + OSV. OSS license still pending.
+
+## Session log — 2026-10-27 (tracked repositories + JDK 17 toolchain)
+
+**Working:** tracked repositories (API PR #13): users add a public GitHub repo on the
+one-page console, branches load from the GitHub API on entry with the default branch
+preselected, and the user manually specifies JDK 17 or 21. Each run snapshots repo
+URL, branch, and JDK into the Analysis; dispatch maps the snapshot to a digest-pinned
+worker image (`WORKER_IMAGE_JDK17` etc.), failing closed when unconfigured.
+
+**JDK 17 image (worker PR #6):** `Dockerfile.jdk17` — Go worker + Git + OpenJDK 17 +
+Maven 3.9.11 on a digest-pinned Maven/Temurin amd64 runtime. GHCR published
+`ghcr.io/patchwrit/patchwrit-worker@sha256:c455e1fe055c35d8697f73ff66dcb3b7cb1dac1408a7701c2c16cf84c6983084`
+(linux/amd64 manifest).
+
+**Live proof:** analysis `8b7630d6-3307-45db-828f-0407131ce27f` (tracked PetClinic,
+branch `main`, JDK 17): pinned SHA `cf392920cdbe9cd07689f1f4b603271940bac957`,
+callback reported Git 2.43.0, OpenJDK 17.0.17, Maven 3.9.11; analysis `completed`,
+cleanup `destroyed`, `fly machines list` empty afterward. The worker does not yet
+clone the repo or resolve Maven dependencies — toolchain presence only.
+
+**Next:** W6c — worker clones the pinned SHA inside the JDK image, verifies HEAD,
+and reports POM/module structure. Then Maven dependency graph, then OSV findings.
+OSS license still pending.
