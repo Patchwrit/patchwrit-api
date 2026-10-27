@@ -67,3 +67,35 @@ held by the owner and exported only in their shell; never committed.
 
 **Next smallest testable task:** Milestone 2 — `POST /api/v1/analyses` with PostgreSQL
 analyses state + Oban job, pinning repo ref to SHA (separate PR). OSS license still pending.
+
+## Session log — 2026-10-26 (W1–W5, worker integration)
+
+**Working:** joint analysis contract in both repos; Go worker smoke binary with
+callback delivery; analyses DB + lifecycle context; LiveView submit/list/detail UI;
+Oban dispatch (pin ref→SHA via `git ls-remote`, job-scoped callback token hashed at
+rest, worker Machine from digest-pinned image, timeout + failure cleanup);
+authenticated idempotent worker callback persisting the raw result and destroying
+the Machine. Worker images publish to GHCR on merge; live runs used the Fly
+registry (`registry.fly.io/patchwrit-machines`) because GHCR package visibility
+required owner-admin action.
+
+**Live end-to-end proof (2026-10-27):** analysis `2d40b6ba-27c0-4e7c-8699-f3a3cd845211`
+(PetClinic `main`): SHA pinned to `cf392920cdbe9cd07689f1f4b603271940bac957`, Machine
+`811169dc4e1e08` ran worker image `…@sha256:d26ab32e…`, callback persisted
+(`worker_version 0.1.0`, schema 1), analysis `completed`, cleanup `destroyed`,
+`fly machines list` empty afterward. Callback reached local Phoenix through a
+Cloudflare quick tunnel (`CALLBACK_BASE_URL`).
+
+**Failures that taught us (all cleaned up, honestly recorded in the DB):**
+- arm64 image on amd64 Fly VMs: crash-loop `exit_code=-1`. Build `--platform linux/amd64`.
+- `scratch` runtime has no CA roots: callback failed `x509` unknown authority.
+  Fixed by alpine + `ca-certificates` (worker PR #5).
+- Two runs interrupted by server restarts left stopped Machines; each was deleted
+  through the test-machines API and its analysis reconciled to `failed/destroyed`
+  with an explanatory error. Follow-up worth building: an orphan reconciler and
+  a Machine `restart: no` policy for one-shot jobs.
+
+**Tests:** API 30 tests, 0 failures; worker `go test ./...` green.
+
+**Next:** merge worker PR #5 (CA certs) so GHCR publishes the fixed runtime; then
+W6 — JDK worker images with clone + Maven graph + OSV. OSS license still pending.

@@ -11,9 +11,9 @@
 - [x] Record durations, failures and cleanup evidence. (See HANDOFF.md session log.)
 
 ## P0 — Vertical slice
-- [ ] PostgreSQL analyses state, Oban job.
-- [ ] Pin SHA and worker image digest.
-- [ ] Go worker executes and returns scoped authenticated callback.
+- [x] PostgreSQL analyses state, Oban job.
+- [x] Pin SHA and worker image digest.
+- [x] Go worker executes and returns scoped authenticated callback.
 - [ ] Maven transitive dependency graph on PetClinic.
 - [ ] OSV scan, persisted findings and minimal view.
 - [ ] Vulnerable Java example produces meaningful reproducible finding.
