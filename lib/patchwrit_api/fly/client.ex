@@ -65,7 +65,11 @@ defmodule PatchwritApi.Fly.Client do
           "config" => %{
             "image" => image,
             "env" => env,
-            "guest" => %{"cpu_kind" => "shared", "cpus" => 1, "memory_mb" => 256}
+            "guest" => %{
+              "cpu_kind" => "shared",
+              "cpus" => 1,
+              "memory_mb" => if(image_key in ["jdk17", "jdk21"], do: 1024, else: 256)
+            }
           }
         }
         |> maybe_put_name(name)
