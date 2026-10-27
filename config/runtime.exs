@@ -23,6 +23,15 @@ end
 config :patchwrit_api, PatchwritApiWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+# Fly Machines API (Phase 3 client). Secrets come from the environment only.
+# Guarded so test/dev config is never clobbered when the vars are absent.
+if System.get_env("FLY_API_TOKEN") || System.get_env("FLY_APP_NAME") do
+  config :patchwrit_api, :fly,
+    api_token: System.get_env("FLY_API_TOKEN"),
+    app_name: System.get_env("FLY_APP_NAME"),
+    base_url: System.get_env("FLY_API_HOSTNAME") || "https://api.machines.dev"
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
