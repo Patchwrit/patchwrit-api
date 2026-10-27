@@ -42,3 +42,6 @@ config :phoenix,
 
 # Test-machine routes are exercised by controller tests.
 config :patchwrit_api, enable_test_machine_routes: true
+
+# Jobs are enqueued in tests but never executed automatically.
+config :patchwrit_api, Oban, testing: :manual
