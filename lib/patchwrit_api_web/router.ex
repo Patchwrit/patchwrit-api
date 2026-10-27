@@ -33,6 +33,8 @@ defmodule PatchwritApiWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    live "/analyses", AnalysisLive.Index
+    live "/analyses/:id", AnalysisLive.Show
   end
 
   # Other scopes may use custom stacks.
