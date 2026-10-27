@@ -122,3 +122,22 @@ clone the repo or resolve Maven dependencies — toolchain presence only.
 **Next:** W6c — worker clones the pinned SHA inside the JDK image, verifies HEAD,
 and reports POM/module structure. Then Maven dependency graph, then OSV findings.
 OSS license still pending.
+
+## Session log — 2026-10-27 (W6c clone + POM inventory)
+
+**Working:** worker PR #7 and API PR #16. When repository input is present, the Go
+worker clones it, checks out the pinned SHA, verifies `HEAD` equals the pin, and
+reports `repository` evidence (checked-out SHA, POM files, root modules) in the
+callback. Clone failures are reported results (`clone_failed`/`timeout`), never
+silent crashes. The analysis page renders a Repository checkout section.
+
+**Live proof:** analysis `6ac188ac-3bd0-464e-8ad2-a406b1199a64` on image
+`ghcr.io/patchwrit/patchwrit-worker@sha256:4371206a…`: inside the Fly Machine the
+worker cloned PetClinic, `checked_out_sha` == pinned `cf392920…`, `pom_files`
+== `["pom.xml"]`; analysis `completed`, cleanup `destroyed`, Fly app empty after.
+
+**Next:** W6d Maven dependency graph. Read `docs/PRE_TRIBUNAL_READINESS.md` first:
+in particular, untrusted Maven/plugin execution must not inherit
+`PATCHWRIT_CALLBACK_TOKEN` in its environment — scrub child-process env in the
+worker (or poll for results) before running `mvn` on arbitrary repositories.
+OSS license still pending.
