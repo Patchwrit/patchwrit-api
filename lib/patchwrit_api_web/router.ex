@@ -14,6 +14,21 @@ defmodule PatchwritApiWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :test_machines do
+    plug PatchwritApiWeb.Plugs.RequireTestMachines
+  end
+
+  scope "/api/v1", PatchwritApiWeb do
+    pipe_through [:api, :test_machines]
+
+    post "/test-machines", TestMachineController, :create
+    get "/test-machines", TestMachineController, :index
+    get "/test-machines/:id", TestMachineController, :show
+    post "/test-machines/:id/start", TestMachineController, :start
+    post "/test-machines/:id/stop", TestMachineController, :stop
+    delete "/test-machines/:id", TestMachineController, :delete
+  end
+
   scope "/", PatchwritApiWeb do
     pipe_through :browser
 

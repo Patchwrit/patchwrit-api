@@ -70,6 +70,9 @@ config :patchwrit_api, PatchwritApiWeb.Endpoint,
 # Enable dev routes for dashboard and mailbox
 config :patchwrit_api, dev_routes: true
 
+# Test-machine routes are dev-only unless TEST_MACHINES_TOKEN is set.
+config :patchwrit_api, enable_test_machine_routes: true
+
 # Do not include metadata nor timestamps in development logs
 config :logger, :default_formatter, format: "[$level] $message\n"
 
