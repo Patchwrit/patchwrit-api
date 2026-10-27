@@ -127,3 +127,8 @@ if config_env() == :prod do
   #
   # See https://hexdocs.pm/swoosh/Swoosh.html#module-installation for details.
 end
+
+# Bearer gate for test-machine routes outside dev (never commit the value).
+if token = System.get_env("TEST_MACHINES_TOKEN") do
+  config :patchwrit_api, test_machines_token: token
+end
