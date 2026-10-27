@@ -54,6 +54,29 @@ defmodule PatchwritApi.AnalysesTest do
     assert {:error, :invalid_cleanup_status} = Analyses.set_cleanup_status(analysis, "running")
   end
 
+  test "create_analysis_for_repository snapshots repository configuration" do
+    {:ok, repository} =
+      PatchwritApi.Repositories.create_repository(%{
+        "repository_url" => "https://github.com/spring-petclinic/spring-framework-petclinic",
+        "default_ref" => "javaconfig",
+        "java_version" => "17"
+      })
+
+    assert {:ok, analysis} = Analyses.create_analysis_for_repository(repository)
+    assert analysis.repository_id == repository.id
+    assert analysis.repository_url == repository.repository_url
+    assert analysis.requested_ref == "javaconfig"
+    assert analysis.jdk_version == "17"
+    assert analysis.runtime == %{"jdk" => "17"}
+
+    {:ok, _repository} =
+      PatchwritApi.Repositories.update_repository(repository, %{"java_version" => "21"})
+
+    persisted = Analyses.get_analysis!(analysis.id)
+    assert persisted.jdk_version == "17"
+    assert persisted.runtime == %{"jdk" => "17"}
+  end
+
   test "get and list return persisted analyses" do
     {:ok, analysis} = Analyses.create_analysis(@valid)
     assert Analyses.get_analysis!(analysis.id).id == analysis.id

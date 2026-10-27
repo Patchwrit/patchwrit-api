@@ -184,7 +184,8 @@ body.patchwrit input:focus-visible {
   font-weight: 750;
 }
 
-.pw-form .input {
+.pw-form .input,
+.pw-form .select {
   width: 100%;
   padding: 11px 12px;
   background: #fbfcfb;
@@ -230,6 +231,42 @@ body.patchwrit input:focus-visible {
 }
 
 .pw-submit:hover {
+  background: var(--pw-accent-hover);
+}
+
+.pw-branch-note {
+  margin: 0;
+  color: var(--pw-success-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.pw-branch-error {
+  margin: 0;
+  color: var(--pw-danger-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.pw-recent-section {
+  margin-top: 28px;
+}
+
+.pw-run-button {
+  justify-self: start;
+  margin-top: 13px;
+  padding: 9px 13px;
+  background: var(--pw-ink);
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.pw-run-button:hover {
   background: var(--pw-accent-hover);
 }
 

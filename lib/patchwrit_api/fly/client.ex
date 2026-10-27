@@ -51,8 +51,10 @@ defmodule PatchwritApi.Fly.Client do
   """
   @spec create_worker_machine(map()) :: {:ok, result()} | {:error, error()}
   def create_worker_machine(attrs) when is_map(attrs) do
+    image_key = attrs |> fetch_attr("image_key", "smoke") |> to_string()
+
     with {:ok, config} <- configured(),
-         {:ok, image} <- worker_image(config),
+         {:ok, image} <- worker_image(config, image_key),
          {:ok, name} <- validate_name(fetch_attr(attrs, "name", nil)) do
       env =
         Map.new(fetch_attr(attrs, "env", %{}), fn {k, v} -> {to_string(k), to_string(v)} end)
@@ -74,8 +76,18 @@ defmodule PatchwritApi.Fly.Client do
 
   def create_worker_machine(_attrs), do: invalid("worker machine attributes must be a map")
 
-  defp worker_image(config) do
-    image = Map.get(config, :worker_image)
+  @doc "Returns the configured digest-pinned image reference for an image key."
+  @spec selected_worker_image(String.t()) :: {:ok, String.t()} | {:error, error()}
+  def selected_worker_image(image_key \\ "smoke") do
+    with {:ok, config} <- configured() do
+      worker_image(config, to_string(image_key))
+    end
+  end
+
+  defp worker_image(config, image_key) do
+    image =
+      Map.get(config.worker_images, image_key) ||
+        if image_key == "smoke", do: Map.get(config, :worker_image)
 
     if is_binary(image) and String.contains?(image, "@sha256:") do
       {:ok, image}
@@ -83,7 +95,8 @@ defmodule PatchwritApi.Fly.Client do
       {:error,
        %{
          status: 503,
-         message: "worker image is not configured with a pinned digest (set WORKER_IMAGE)",
+         message:
+           "worker image for #{image_key} is not configured with a pinned digest (set WORKER_IMAGE_#{String.upcase(image_key)})",
          duration_ms: 0
        }}
     end
@@ -213,6 +226,7 @@ defmodule PatchwritApi.Fly.Client do
          app_name: app,
          base_url: Keyword.get(fly, :base_url, @default_base_url),
          worker_image: Keyword.get(fly, :worker_image),
+         worker_images: normalize_worker_images(Keyword.get(fly, :worker_images, [])),
          req_options: Keyword.get(fly, :req_options, [])
        }}
     else
@@ -224,6 +238,16 @@ defmodule PatchwritApi.Fly.Client do
        }}
     end
   end
+
+  defp normalize_worker_images(images) when is_map(images) do
+    Map.new(images, fn {key, value} -> {to_string(key), value} end)
+  end
+
+  defp normalize_worker_images(images) when is_list(images) do
+    Map.new(images, fn {key, value} -> {to_string(key), value} end)
+  end
+
+  defp normalize_worker_images(_images), do: %{}
 
   defp request(config, method, path, opts) do
     {kind, req_opts} = Keyword.pop!(opts, :kind)

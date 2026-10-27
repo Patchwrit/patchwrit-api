@@ -17,8 +17,10 @@ defmodule PatchwritApi.Analyses.Analysis do
   @cleanup_statuses ~w(pending destroyed failed)
 
   schema "analyses" do
+    belongs_to :repository, PatchwritApi.Repositories.Repository
     field :repository_url, :string
     field :requested_ref, :string, default: "HEAD"
+    field :jdk_version, :string
     field :resolved_sha, :string
     field :status, :string, default: "queued"
     field :machine_id, :string
@@ -40,8 +42,10 @@ defmodule PatchwritApi.Analyses.Analysis do
   def changeset(analysis, attrs) do
     analysis
     |> cast(attrs, [
+      :repository_id,
       :repository_url,
       :requested_ref,
+      :jdk_version,
       :resolved_sha,
       :status,
       :machine_id,
@@ -55,9 +59,18 @@ defmodule PatchwritApi.Analyses.Analysis do
       :timings
     ])
     |> validate_required([:repository_url])
+    |> assoc_constraint(:repository)
+    |> validate_supported_jdk()
     |> validate_github_url()
     |> validate_inclusion(:status, @statuses)
     |> validate_inclusion(:machine_cleanup_status, @cleanup_statuses)
+  end
+
+  defp validate_supported_jdk(changeset) do
+    case get_field(changeset, :jdk_version) do
+      nil -> changeset
+      _version -> validate_inclusion(changeset, :jdk_version, ~w(17 21))
+    end
   end
 
   defp validate_github_url(changeset) do

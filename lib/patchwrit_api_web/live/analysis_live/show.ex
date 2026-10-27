@@ -45,6 +45,12 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
             <dd class="pw-mono">{@analysis.requested_ref}</dd>
           </div>
           <div class="pw-detail-item">
+            <dt>Java version</dt>
+            <dd>
+              {if @analysis.jdk_version, do: "JDK #{@analysis.jdk_version}", else: "Not specified"}
+            </dd>
+          </div>
+          <div class="pw-detail-item">
             <dt>Resolved SHA</dt>
             <dd class="pw-mono">{@analysis.resolved_sha || "Not pinned yet"}</dd>
           </div>
