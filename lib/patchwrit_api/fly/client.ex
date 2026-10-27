@@ -42,6 +42,53 @@ defmodule PatchwritApi.Fly.Client do
 
   def create_machine(_attrs), do: invalid("machine attributes must be a map")
 
+  @doc """
+  Creates a Machine running the configured worker image.
+
+  The image comes only from server config (`WORKER_IMAGE`) and must be
+  pinned by digest. `env` is passed into the Machine; it carries the
+  PATCHWRIT_* job variables including the scoped callback token.
+  """
+  @spec create_worker_machine(map()) :: {:ok, result()} | {:error, error()}
+  def create_worker_machine(attrs) when is_map(attrs) do
+    with {:ok, config} <- configured(),
+         {:ok, image} <- worker_image(config),
+         {:ok, name} <- validate_name(fetch_attr(attrs, "name", nil)) do
+      env =
+        Map.new(fetch_attr(attrs, "env", %{}), fn {k, v} -> {to_string(k), to_string(v)} end)
+
+      payload =
+        %{
+          "region" => fetch_attr(attrs, "region", @default_region),
+          "config" => %{
+            "image" => image,
+            "env" => env,
+            "guest" => %{"cpu_kind" => "shared", "cpus" => 1, "memory_mb" => 256}
+          }
+        }
+        |> maybe_put_name(name)
+
+      request(config, :post, machines_path(config), json: payload, kind: :machine)
+    end
+  end
+
+  def create_worker_machine(_attrs), do: invalid("worker machine attributes must be a map")
+
+  defp worker_image(config) do
+    image = Map.get(config, :worker_image)
+
+    if is_binary(image) and String.contains?(image, "@sha256:") do
+      {:ok, image}
+    else
+      {:error,
+       %{
+         status: 503,
+         message: "worker image is not configured with a pinned digest (set WORKER_IMAGE)",
+         duration_ms: 0
+       }}
+    end
+  end
+
   @doc "Lists Machines in the configured app."
   @spec list_machines() :: {:ok, result()} | {:error, error()}
   def list_machines do
@@ -165,6 +212,7 @@ defmodule PatchwritApi.Fly.Client do
          api_token: token,
          app_name: app,
          base_url: Keyword.get(fly, :base_url, @default_base_url),
+         worker_image: Keyword.get(fly, :worker_image),
          req_options: Keyword.get(fly, :req_options, [])
        }}
     else

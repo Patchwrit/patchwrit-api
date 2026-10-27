@@ -19,6 +19,12 @@ defmodule PatchwritApiWeb.Router do
   end
 
   scope "/api/v1", PatchwritApiWeb do
+    pipe_through :api
+
+    post "/worker-callbacks/:id", WorkerCallbackController, :create
+  end
+
+  scope "/api/v1", PatchwritApiWeb do
     pipe_through [:api, :test_machines]
 
     post "/test-machines", TestMachineController, :create

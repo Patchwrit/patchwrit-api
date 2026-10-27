@@ -29,7 +29,13 @@ if System.get_env("FLY_API_TOKEN") || System.get_env("FLY_APP_NAME") do
   config :patchwrit_api, :fly,
     api_token: System.get_env("FLY_API_TOKEN"),
     app_name: System.get_env("FLY_APP_NAME"),
-    base_url: System.get_env("FLY_API_HOSTNAME") || "https://api.machines.dev"
+    base_url: System.get_env("FLY_API_HOSTNAME") || "https://api.machines.dev",
+    worker_image: System.get_env("WORKER_IMAGE")
+end
+
+# Public base URL workers use to call back (tunnel in dev, deployed app in prod).
+if base = System.get_env("CALLBACK_BASE_URL") do
+  config :patchwrit_api, :callback_base_url, base
 end
 
 if config_env() == :prod do

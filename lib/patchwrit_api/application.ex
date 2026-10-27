@@ -12,6 +12,7 @@ defmodule PatchwritApi.Application do
       PatchwritApi.Repo,
       {DNSCluster, query: Application.get_env(:patchwrit_api, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: PatchwritApi.PubSub},
+      {Oban, Application.fetch_env!(:patchwrit_api, Oban)},
       # Start a worker by calling: PatchwritApi.Worker.start_link(arg)
       # {PatchwritApi.Worker, arg},
       # Start to serve requests, typically the last entry

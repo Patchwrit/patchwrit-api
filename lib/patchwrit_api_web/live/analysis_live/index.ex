@@ -32,7 +32,8 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
 
   def handle_event("save", %{"analysis" => params}, socket) do
     case Analyses.create_analysis(params) do
-      {:ok, _analysis} ->
+      {:ok, analysis} ->
+        PatchwritApi.Workers.DispatchAnalysis.enqueue(analysis)
         {:noreply,
          socket
          |> put_flash(:info, "Analysis queued")

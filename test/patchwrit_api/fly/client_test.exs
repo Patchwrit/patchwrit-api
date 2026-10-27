@@ -119,6 +119,45 @@ defmodule PatchwritApi.Fly.ClientTest do
     assert error.message == "invalid token"
   end
 
+  test "create_worker_machine sends the pinned image and env" do
+    Application.put_env(:patchwrit_api, :fly,
+      api_token: "test-token",
+      app_name: "test-app",
+      base_url: "https://api.machines.dev",
+      worker_image: "ghcr.io/patchwrit/patchwrit-worker@sha256:abc123",
+      req_options: [plug: {Req.Test, @stub}]
+    )
+
+    test_pid = self()
+
+    Req.Test.stub(@stub, fn conn ->
+      {:ok, raw, conn} = Plug.Conn.read_body(conn)
+      send(test_pid, {:worker_payload, Jason.decode!(raw)})
+
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.send_resp(201, Jason.encode!(@machine))
+    end)
+
+    assert {:ok, %{status: 201}} =
+             Client.create_worker_machine(%{"env" => %{"PATCHWRIT_JOB_ID" => "job-1"}})
+
+    assert_received {:worker_payload, payload}
+    assert payload["config"]["image"] == "ghcr.io/patchwrit/patchwrit-worker@sha256:abc123"
+    assert payload["config"]["env"] == %{"PATCHWRIT_JOB_ID" => "job-1"}
+  end
+
+  test "create_worker_machine refuses an unpinned worker image" do
+    Application.put_env(:patchwrit_api, :fly,
+      api_token: "test-token",
+      app_name: "test-app",
+      worker_image: "ghcr.io/patchwrit/patchwrit-worker:smoke"
+    )
+
+    Req.Test.stub(@stub, fn _conn -> flunk("Fly must not be called without a pinned image") end)
+    assert {:error, %{status: 503}} = Client.create_worker_machine(%{})
+  end
+
   test "missing configuration returns 503 without calling Fly" do
     Application.put_env(:patchwrit_api, :fly, api_token: nil, app_name: nil)
 

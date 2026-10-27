@@ -22,6 +22,10 @@ config :patchwrit_api, PatchwritApiWeb.Endpoint,
   pubsub_server: PatchwritApi.PubSub,
   live_view: [signing_salt: "QIQh44lJ"]
 
+config :patchwrit_api, Oban,
+  repo: PatchwritApi.Repo,
+  queues: [dispatch: 5]
+
 # Configure the mailer
 #
 # By default it uses the "Local" adapter which stores the emails
