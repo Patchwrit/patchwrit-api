@@ -141,3 +141,27 @@ in particular, untrusted Maven/plugin execution must not inherit
 `PATCHWRIT_CALLBACK_TOKEN` in its environment — scrub child-process env in the
 worker (or poll for results) before running `mvn` on arbitrary repositories.
 OSS license still pending.
+
+## Session log — 2026-10-27 (W6d Maven dependency graph)
+
+**Working:** worker PR #8 and API PR #18. After cloning the pinned SHA, the Go
+worker resolves the effective Maven graph with the trusted, pinned
+`org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree -DoutputType=json`
+— never the repository's build or `mvnw`. Per `docs/PRE_TRIBUNAL_READINESS.md`
+Gate 1, the Maven child process runs with a scrubbed environment (no
+`PATCHWRIT_CALLBACK_TOKEN`, cloud, or GitHub secrets), an isolated HOME/local
+Maven repo, and a 512 MB heap cap. The flattened result (coordinate, scope,
+depth, introduction path) returns in the callback; Phoenix persists it on the
+analysis and renders a Dependencies section. JDK Machines are sized 1024 MB
+with a 900 s dispatch timeout for real resolution.
+
+**Live proof:** analysis `152c8728-89be-40ba-8c7a-d6c4eeb13e0b` on Machine
+`857629dbdd3978`, image
+`ghcr.io/patchwrit/patchwrit-worker@sha256:4d0879e62b6f1684eeca9e90d3521590bf00bb0a39d0ce183744359cef964cce`
+(linux/amd64): PetClinic `checked_out_sha` == pinned `cf392920…`, **77
+dependencies** persisted and displayed, timings clone 1026 ms / Maven 15592 ms
+/ execution 17874 ms; analysis `completed`, cleanup `destroyed`, and
+`GET /api/v1/test-machines` returned `{"data":[]}` afterward — no orphans.
+
+**Next:** W6e OSV scan with persisted findings and a minimal findings view.
+Then JDK 21 image, then tribunal agents. OSS license still pending.
