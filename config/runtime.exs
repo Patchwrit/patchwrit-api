@@ -30,7 +30,12 @@ if System.get_env("FLY_API_TOKEN") || System.get_env("FLY_APP_NAME") do
     api_token: System.get_env("FLY_API_TOKEN"),
     app_name: System.get_env("FLY_APP_NAME"),
     base_url: System.get_env("FLY_API_HOSTNAME") || "https://api.machines.dev",
-    worker_image: System.get_env("WORKER_IMAGE")
+    worker_image: System.get_env("WORKER_IMAGE"),
+    worker_images: %{
+      "smoke" => System.get_env("WORKER_IMAGE_SMOKE") || System.get_env("WORKER_IMAGE"),
+      "jdk17" => System.get_env("WORKER_IMAGE_JDK17"),
+      "jdk21" => System.get_env("WORKER_IMAGE_JDK21")
+    }
 end
 
 # Public base URL workers use to call back (tunnel in dev, deployed app in prod).
@@ -137,4 +142,10 @@ end
 # Bearer gate for test-machine routes outside dev (never commit the value).
 if token = System.get_env("TEST_MACHINES_TOKEN") do
   config :patchwrit_api, test_machines_token: token
+end
+
+# Optional GitHub token for higher API rate limits. Public metadata works
+# without it; the token is server-side only and never sent to a worker.
+if github_token = System.get_env("GITHUB_TOKEN") do
+  config :patchwrit_api, :github, token: github_token
 end

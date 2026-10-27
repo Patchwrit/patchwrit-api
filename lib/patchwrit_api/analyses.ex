@@ -36,6 +36,22 @@ defmodule PatchwritApi.Analyses do
     |> Repo.insert()
   end
 
+  @doc """
+  Creates an immutable run snapshot from a tracked repository.
+
+  The repository's current URL, default ref, and Java version are copied;
+  later edits to the tracked repository do not alter this analysis.
+  """
+  def create_analysis_for_repository(%PatchwritApi.Repositories.Repository{} = repository) do
+    create_analysis(%{
+      "repository_id" => repository.id,
+      "repository_url" => repository.repository_url,
+      "requested_ref" => repository.default_ref,
+      "jdk_version" => repository.java_version,
+      "runtime" => %{"jdk" => repository.java_version}
+    })
+  end
+
   def update_analysis(%Analysis{} = analysis, attrs) do
     analysis
     |> Analysis.changeset(attrs)

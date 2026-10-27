@@ -37,7 +37,7 @@ defmodule PatchwritApi.Dispatch do
          {:ok, analysis} <-
            Analyses.update_analysis(analysis, %{
              "machine_id" => created.data.id,
-             "worker_image" => worker_image_label()
+             "worker_image" => worker_image_label(analysis)
            }),
          {:ok, analysis} <- Analyses.transition(analysis, "running") do
       wait_for_callback(analysis)
@@ -67,6 +67,7 @@ defmodule PatchwritApi.Dispatch do
   defp worker_attrs(analysis, sha, token) do
     %{
       "name" => "patchwrit-#{String.slice(analysis.id, 0, 8)}",
+      "image_key" => image_key(analysis),
       "env" => %{
         "PATCHWRIT_JOB_ID" => analysis.id,
         "PATCHWRIT_REPOSITORY_URL" => analysis.repository_url,
@@ -75,7 +76,7 @@ defmodule PatchwritApi.Dispatch do
           "#{callback_base_url()}/api/v1/worker-callbacks/#{analysis.id}",
         "PATCHWRIT_CALLBACK_TOKEN" => token,
         "PATCHWRIT_TIMEOUT_SECONDS" => "300",
-        "PATCHWRIT_JDK" => "auto",
+        "PATCHWRIT_JDK" => analysis.jdk_version || "auto",
         "PATCHWRIT_MAVEN" => "auto"
       }
     }
@@ -136,6 +137,17 @@ defmodule PatchwritApi.Dispatch do
   end
 
   defp callback_base_url, do: Application.get_env(:patchwrit_api, :callback_base_url)
-  defp worker_image_label, do: Application.get_env(:patchwrit_api, :fly, [])[:worker_image]
+
+  defp image_key(%{jdk_version: "17"}), do: "jdk17"
+  defp image_key(%{jdk_version: "21"}), do: "jdk21"
+  defp image_key(_analysis), do: "smoke"
+
+  defp worker_image_label(analysis) do
+    case Client.selected_worker_image(image_key(analysis)) do
+      {:ok, image} -> image
+      {:error, _error} -> nil
+    end
+  end
+
   defp timeout_seconds, do: Application.get_env(:patchwrit_api, :dispatch_timeout_seconds, 180)
 end

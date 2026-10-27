@@ -147,6 +147,34 @@ defmodule PatchwritApi.Fly.ClientTest do
     assert payload["config"]["env"] == %{"PATCHWRIT_JOB_ID" => "job-1"}
   end
 
+  test "create_worker_machine selects a JDK image by key" do
+    Application.put_env(:patchwrit_api, :fly,
+      api_token: "test-token",
+      app_name: "test-app",
+      base_url: "https://api.machines.dev",
+      worker_images: %{"jdk17" => "ghcr.io/patchwrit/patchwrit-worker@sha256:jdk17"},
+      req_options: [plug: {Req.Test, @stub}]
+    )
+
+    test_pid = self()
+
+    Req.Test.stub(@stub, fn conn ->
+      {:ok, raw, conn} = Plug.Conn.read_body(conn)
+      send(test_pid, {:jdk_payload, Jason.decode!(raw)})
+
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.send_resp(201, Jason.encode!(@machine))
+    end)
+
+    assert {:ok, %{status: 201}} = Client.create_worker_machine(%{"image_key" => "jdk17"})
+    assert_received {:jdk_payload, payload}
+    assert payload["config"]["image"] == "ghcr.io/patchwrit/patchwrit-worker@sha256:jdk17"
+
+    assert {:ok, "ghcr.io/patchwrit/patchwrit-worker@sha256:jdk17"} =
+             Client.selected_worker_image("jdk17")
+  end
+
   test "create_worker_machine refuses an unpinned worker image" do
     Application.put_env(:patchwrit_api, :fly,
       api_token: "test-token",
