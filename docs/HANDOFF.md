@@ -6,8 +6,8 @@
 - Public GitHub repo `Patchwrit/patchwrit-api` exists.
 - `main` was initialized with README.
 - Documentation branch `docs/project-foundation` is intended to contain the founding plan.
-- **No Phoenix code, Go worker, database schemas, Fly integration, Oban jobs, OSV scanner, agent logic or tests have been verified implemented.**
-- Proposed second repository: `patchwrit-worker` — check whether it has been created.
+- **Implemented and verified (2026-10-26):** Phoenix app, Fly Machines client, gated test-machine routes, live create/inspect/start/stop/destroy with cleanup proof. **Not yet implemented:** database schemas for analyses, Oban jobs, OSV scanner, agent logic.
+- Second repository `patchwrit-worker` exists separately (owner-confirmed); integration comes in a later milestone.
 
 ## Read first
 `PROJECT.md` (mission), `ARCHITECTURE.md` (architecture/security), `DECISIONS.md` (accepted choices), `IMPLEMENTATION.md` (milestones), `BACKLOG.md` (priority).
@@ -37,3 +37,33 @@ Do not treat docs as implemented code. Phoenix coordinates and persists; Go exec
 
 ## At end of every session
 Update: date, branch/commit SHA, files changed, commands/tests actually run and their results, current working/not-working features, blockers, next smallest testable task. This file is the relay between ChatGPT and Muse Code.
+
+## Session log — 2026-10-26 (Phases 0–5, Fly lifecycle)
+
+**Working:** Phoenix 1.8.7 API boots locally with PostgreSQL; `PatchwritApi.Fly.Client`
+(create/list/get/start/stop/delete over Req, allowlist validation, normalized
+`{:ok | :error}` results with `duration_ms`); gated `/api/v1/test-machines` routes
+(dev-enabled or `TEST_MACHINES_TOKEN` bearer, else 404); live Fly lifecycle verified
+end to end. PRs merged: #2 design contract, #3 Fly client, #4 gated routes.
+
+**Live smoke evidence (app `patchwrit-machines`, region `iad`, image busybox, 1 vCPU/256 MB):**
+Machine `8715e0f0470998` (`patchwrit-smoke-1`, instance `01M5XXGJQ0P50Z31PXCDADRRWG`).
+Create 201 in 1232 ms (state `created`, auto-transitioned to `started`); inspect 200;
+stop 200, inspected `stopped`; start 200 (1391 ms), inspected `started`; destroy 200
+in 1001 ms. Post-destroy: Phoenix list `[]` and `fly machines list -a patchwrit-machines`
+reported no machines — no orphans. Token: 30-day deploy token scoped to the app,
+held by the owner and exported only in their shell; never committed.
+
+**Findings / follow-ups:**
+- Fly start/stop return no Machine body, so action responses currently render
+  null fields; state was proven by follow-up inspect. Candidate fix: enrich
+  action responses with a subsequent GET.
+- A destroyed Machine id still returns a `destroyed` tombstone on GET briefly;
+  list (not GET) is the orphan check.
+- Tailwind binary is killed (`Killed: 9`) inside the agent sandbox only; assets
+  build normally in a user terminal. API unaffected.
+
+**Tests:** 15 tests, 0 failures (`mix test`); `mix compile --warnings-as-errors` clean.
+
+**Next smallest testable task:** Milestone 2 — `POST /api/v1/analyses` with PostgreSQL
+analyses state + Oban job, pinning repo ref to SHA (separate PR). OSS license still pending.

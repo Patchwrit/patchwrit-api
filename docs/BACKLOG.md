@@ -4,11 +4,11 @@
 
 ## P0 — Bootstrap
 - [ ] Select OSS license.
-- [ ] Initialize Phoenix app in existing `patchwrit-api` repository, preserve README/docs.
-- [ ] Create separate `patchwrit-worker` Go repository.
-- [ ] Configure Fly worker app and scoped token.
-- [ ] Create/inspect/destroy Machine with direct API, then authenticated Phoenix API.
-- [ ] Record durations, failures and cleanup evidence.
+- [x] Initialize Phoenix app in existing `patchwrit-api` repository, preserve README/docs.
+- [x] Create separate `patchwrit-worker` Go repository. (Exists separately; owner-handled, integrated later.)
+- [x] Configure Fly worker app and scoped token. (App `patchwrit-machines`; 30-day deploy token held by owner, env-only.)
+- [x] Create/inspect/destroy Machine with direct API, then authenticated Phoenix API.
+- [x] Record durations, failures and cleanup evidence. (See HANDOFF.md session log.)
 
 ## P0 — Vertical slice
 - [ ] PostgreSQL analyses state, Oban job.
