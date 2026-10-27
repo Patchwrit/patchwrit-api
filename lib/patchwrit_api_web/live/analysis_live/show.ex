@@ -14,46 +14,70 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="mx-auto max-w-3xl px-4 py-8">
-      <.link navigate={~p"/analyses"} class="text-sm text-zinc-600 underline">← All analyses</.link>
-      <h1 class="mt-3 break-all text-xl font-bold text-zinc-900">{@analysis.repository_url}</h1>
+    <div class="pw-shell">
+      <header class="pw-masthead">
+        <.link navigate={~p"/analyses"} class="pw-brand">
+          <span class="pw-mark">PW</span>
+          <span class="pw-brand-copy">
+            <strong>Patchwrit</strong>
+            <span>Analysis console</span>
+          </span>
+        </.link>
+        <p class="pw-masthead-note">Ephemeral Fly workers<br />Evidence-first results</p>
+      </header>
 
-      <div class="mt-3 flex items-center gap-2">
-        <.status_badge status={@analysis.status} />
-        <.cleanup_badge status={@analysis.machine_cleanup_status} />
-      </div>
+      <main>
+        <.link navigate={~p"/analyses"} class="pw-back-link">← All analyses</.link>
+        <h1 class="pw-detail-title">{@analysis.repository_url}</h1>
 
-      <dl class="mt-6 space-y-2 text-sm">
-        <div>
-          <dt class="font-semibold text-zinc-900">ID</dt>
-          <dd class="break-all text-zinc-700">{@analysis.id}</dd>
+        <div class="pw-status-strip">
+          <.status_badge status={@analysis.status} />
+          <.cleanup_badge status={@analysis.machine_cleanup_status} />
         </div>
-        <div>
-          <dt class="font-semibold text-zinc-900">Requested ref</dt>
-          <dd class="text-zinc-700">{@analysis.requested_ref}</dd>
-        </div>
-        <div>
-          <dt class="font-semibold text-zinc-900">Resolved SHA</dt>
-          <dd class="text-zinc-700">{@analysis.resolved_sha || "—"}</dd>
-        </div>
-        <div>
-          <dt class="font-semibold text-zinc-900">Machine</dt>
-          <dd class="text-zinc-700">{@analysis.machine_id || "—"}</dd>
-        </div>
-        <div>
-          <dt class="font-semibold text-zinc-900">Worker image</dt>
-          <dd class="text-zinc-700">{@analysis.worker_image || "—"}</dd>
-        </div>
-        <div :if={@analysis.error_category}>
-          <dt class="font-semibold text-zinc-900">Error</dt>
-          <dd class="text-zinc-700">{@analysis.error_category}: {@analysis.error_message}</dd>
-        </div>
-      </dl>
 
-      <section :if={@analysis.result} class="mt-6">
-        <h2 class="text-base font-semibold text-zinc-900">Worker result</h2>
-        <pre class="mt-2 overflow-x-auto rounded bg-zinc-950 p-4 text-xs text-zinc-100">{Jason.encode!(@analysis.result, pretty: true)}</pre>
-      </section>
+        <dl class="pw-detail-grid">
+          <div class="pw-detail-item">
+            <dt>Analysis ID</dt>
+            <dd class="pw-mono">{@analysis.id}</dd>
+          </div>
+          <div class="pw-detail-item">
+            <dt>Requested ref</dt>
+            <dd class="pw-mono">{@analysis.requested_ref}</dd>
+          </div>
+          <div class="pw-detail-item">
+            <dt>Resolved SHA</dt>
+            <dd class="pw-mono">{@analysis.resolved_sha || "Not pinned yet"}</dd>
+          </div>
+          <div class="pw-detail-item">
+            <dt>Fly Machine</dt>
+            <dd class="pw-mono">{@analysis.machine_id || "Not provisioned"}</dd>
+          </div>
+          <div class="pw-detail-item">
+            <dt>Worker image</dt>
+            <dd class="pw-mono">{@analysis.worker_image || "Not selected yet"}</dd>
+          </div>
+          <div class="pw-detail-item">
+            <dt>Last updated</dt>
+            <dd>{Calendar.strftime(@analysis.updated_at, "%Y-%m-%d %H:%M:%S UTC")}</dd>
+          </div>
+        </dl>
+
+        <div :if={@analysis.error_category} class="pw-error">
+          <strong>{@analysis.error_category}</strong>
+          <span :if={@analysis.error_message}>{@analysis.error_message}</span>
+        </div>
+
+        <section :if={@analysis.result} class="pw-result">
+          <div class="pw-result-head">
+            <div>
+              <span class="pw-panel-kicker">Worker evidence</span>
+              <h2>Worker result</h2>
+            </div>
+            <p>Raw callback payload, stored as received.</p>
+          </div>
+          <pre class="pw-terminal">{Jason.encode!(@analysis.result, pretty: true)}</pre>
+        </section>
+      </main>
     </div>
     """
   end

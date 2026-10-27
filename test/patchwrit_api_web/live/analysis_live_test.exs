@@ -9,8 +9,10 @@ defmodule PatchwritApiWeb.AnalysisLiveTest do
 
   test "renders the submit form and empty state", %{conn: conn} do
     {:ok, _view, html} = live(conn, "/analyses")
-    assert html =~ "New analysis"
+    assert html =~ "Start an analysis"
     assert html =~ "No analyses yet"
+    assert html =~ "/patchwrit.css"
+    assert html =~ "pw-shell"
   end
 
   test "submitting a valid repository creates a queued analysis in the list", %{conn: conn} do

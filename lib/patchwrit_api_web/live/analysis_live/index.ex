@@ -2,8 +2,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
   @moduledoc """
   Submit a repository for analysis and watch persisted analyses.
 
-  W4 scope: submission only creates a `queued` Analysis. Dispatch to a
-  Fly worker arrives in W5; nothing here talks to Fly.
+  Submission creates an Analysis and enqueues its Fly worker dispatch.
   """
 
   use PatchwritApiWeb, :live_view
@@ -34,6 +33,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
     case Analyses.create_analysis(params) do
       {:ok, analysis} ->
         PatchwritApi.Workers.DispatchAnalysis.enqueue(analysis)
+
         {:noreply,
          socket
          |> put_flash(:info, "Analysis queued")
@@ -53,45 +53,82 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="mx-auto max-w-3xl px-4 py-8">
-      <h1 class="text-2xl font-bold text-zinc-900">Analyses</h1>
+    <div class="pw-shell">
+      <header class="pw-masthead">
+        <.link navigate={~p"/analyses"} class="pw-brand">
+          <span class="pw-mark">PW</span>
+          <span class="pw-brand-copy">
+            <strong>Patchwrit</strong>
+            <span>Analysis console</span>
+          </span>
+        </.link>
+        <p class="pw-masthead-note">Ephemeral Fly workers<br />Evidence-first results</p>
+      </header>
 
-      <section class="mt-6 rounded border border-zinc-200 p-4">
-        <h2 class="text-base font-semibold text-zinc-900">New analysis</h2>
-        <.form
-          for={@form}
-          id="analysis-form"
-          phx-change="validate"
-          phx-submit="save"
-          class="mt-3 space-y-3"
-        >
-          <.input
-            field={@form[:repository_url]}
-            label="Repository URL"
-            placeholder="https://github.com/owner/repo"
-          />
-          <.input field={@form[:requested_ref]} label="Ref (branch, tag, or SHA)" placeholder="HEAD" />
-          <button type="submit" class="rounded bg-zinc-900 px-4 py-2 text-sm font-semibold text-white">
-            Queue analysis
-          </button>
-        </.form>
-      </section>
+      <div class="pw-page-head">
+        <h1>Repository analyses</h1>
+        <p>
+          Queue a public GitHub repository, pin the selected ref to a commit, and follow the worker through provisioning, execution, callback, and cleanup.
+        </p>
+      </div>
 
-      <section class="mt-8">
-        <p :if={@analyses == []} class="text-sm text-zinc-600">No analyses yet</p>
-        <ul class="divide-y divide-zinc-200">
-          <li :for={analysis <- @analyses} class="py-3">
-            <.link navigate={~p"/analyses/#{analysis.id}"} class="font-medium text-zinc-900 underline">
-              {analysis.repository_url}
-            </.link>
-            <div class="mt-1 flex items-center gap-2 text-sm text-zinc-600">
-              <span>ref: {analysis.requested_ref}</span>
-              <.status_badge status={analysis.status} />
-              <.cleanup_badge status={analysis.machine_cleanup_status} />
+      <div class="pw-layout">
+        <section class="pw-panel" aria-labelledby="new-analysis-title">
+          <span class="pw-panel-kicker">New run</span>
+          <h2 id="new-analysis-title">Start an analysis</h2>
+          <p class="pw-panel-copy">
+            The repository is analyzed in a disposable worker. Nothing runs on this host.
+          </p>
+
+          <.form
+            for={@form}
+            id="analysis-form"
+            phx-change="validate"
+            phx-submit="save"
+            class="pw-form"
+          >
+            <.input
+              field={@form[:repository_url]}
+              label="Repository URL"
+              placeholder="https://github.com/owner/repo"
+            />
+            <.input
+              field={@form[:requested_ref]}
+              label="Ref (branch, tag, or SHA)"
+              placeholder="HEAD"
+            />
+            <button type="submit" class="pw-submit">Queue analysis</button>
+          </.form>
+        </section>
+
+        <section aria-labelledby="recent-analyses-title">
+          <div class="pw-section-head">
+            <div>
+              <span class="pw-panel-kicker">Queue</span>
+              <h2 id="recent-analyses-title">Recent analyses</h2>
             </div>
-          </li>
-        </ul>
-      </section>
+            <span class="pw-count">{length(@analyses)} total</span>
+          </div>
+
+          <div :if={@analyses == []} class="pw-empty">
+            <strong>No analyses yet</strong>
+            Start the first run from the form and it will appear here.
+          </div>
+
+          <ul :if={@analyses != []} class="pw-analysis-list">
+            <li :for={analysis <- @analyses} class="pw-analysis-row">
+              <.link navigate={~p"/analyses/#{analysis.id}"} class="pw-repo-link">
+                {analysis.repository_url}
+              </.link>
+              <div class="pw-meta">
+                <span>ref: <span class="pw-mono">{analysis.requested_ref}</span></span>
+                <.status_badge status={analysis.status} />
+                <.cleanup_badge status={analysis.machine_cleanup_status} />
+              </div>
+            </li>
+          </ul>
+        </section>
+      </div>
     </div>
     """
   end
