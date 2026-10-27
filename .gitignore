@@ -35,3 +35,7 @@ patchwrit_api-*.tar
 npm-debug.log
 /assets/node_modules/
 
+
+# Local checkout of the separate patchwrit-worker repo (own Git history).
+# Nested here only so both repos live in one workspace; never commit it.
+/patchwrit-worker/
