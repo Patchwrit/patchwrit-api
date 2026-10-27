@@ -95,6 +95,26 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           </dl>
         </section>
 
+        <section :if={@analysis.result && @analysis.result["dependencies"]} class="pw-result">
+          <div class="pw-result-head">
+            <div>
+              <span class="pw-panel-kicker">Maven graph</span>
+              <h2>Dependencies ({length(@analysis.result["dependencies"])})</h2>
+            </div>
+            <p>Effective graph from the pinned checkout. First 50 shown.</p>
+          </div>
+          <ul class="pw-analysis-list">
+            <li :for={dep <- Enum.take(@analysis.result["dependencies"], 50)} class="pw-analysis-row">
+              <span class="pw-mono">{dep["group_id"]}:{dep["artifact_id"]}:{dep["version"]}</span>
+              <div class="pw-meta">
+                <span>depth {dep["depth"]}</span>
+                <span :if={dep["scope"]}>scope {dep["scope"]}</span>
+                <span>via {dep["introduced_via"] |> List.last()}</span>
+              </div>
+            </li>
+          </ul>
+        </section>
+
         <section :if={@analysis.result} class="pw-result">
           <div class="pw-result-head">
             <div>

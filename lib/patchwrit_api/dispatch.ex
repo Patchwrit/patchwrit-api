@@ -75,7 +75,7 @@ defmodule PatchwritApi.Dispatch do
         "PATCHWRIT_CALLBACK_URL" =>
           "#{callback_base_url()}/api/v1/worker-callbacks/#{analysis.id}",
         "PATCHWRIT_CALLBACK_TOKEN" => token,
-        "PATCHWRIT_TIMEOUT_SECONDS" => "300",
+        "PATCHWRIT_TIMEOUT_SECONDS" => "840",
         "PATCHWRIT_JDK" => analysis.jdk_version || "auto",
         "PATCHWRIT_MAVEN" => "auto"
       }
@@ -149,5 +149,5 @@ defmodule PatchwritApi.Dispatch do
     end
   end
 
-  defp timeout_seconds, do: Application.get_env(:patchwrit_api, :dispatch_timeout_seconds, 180)
+  defp timeout_seconds, do: Application.get_env(:patchwrit_api, :dispatch_timeout_seconds, 900)
 end

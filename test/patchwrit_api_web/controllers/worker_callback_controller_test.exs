@@ -22,6 +22,19 @@ defmodule PatchwritApiWeb.WorkerCallbackControllerTest do
       "pom_files" => ["pom.xml"],
       "modules" => []
     },
+    "dependencies" => [
+      %{
+        "group_id" => "org.apache.tomcat.embed",
+        "artifact_id" => "tomcat-embed-core",
+        "version" => "10.1.24",
+        "scope" => "compile",
+        "depth" => 2,
+        "introduced_via" => [
+          "com.example:app:1.0",
+          "org.springframework.boot:spring-boot-starter-web:3.3.0"
+        ]
+      }
+    ],
     "timings_ms" => %{"execution" => 12},
     "errors" => []
   }
@@ -85,6 +98,10 @@ defmodule PatchwritApiWeb.WorkerCallbackControllerTest do
              "cf392920cdbe9cd07689f1f4b603271940bac957"
 
     assert updated.result["repository"]["pom_files"] == ["pom.xml"]
+
+    assert [%{"artifact_id" => "tomcat-embed-core", "depth" => 2}] =
+             updated.result["dependencies"]
+
     assert updated.machine_cleanup_status == "destroyed"
   end
 
