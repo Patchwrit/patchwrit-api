@@ -15,6 +15,13 @@ defmodule PatchwritApiWeb.WorkerCallbackControllerTest do
       "java_version" => nil,
       "maven_version" => nil
     },
+    "repository" => %{
+      "repository_url" => "https://github.com/spring-petclinic/spring-framework-petclinic",
+      "pinned_sha" => "cf392920cdbe9cd07689f1f4b603271940bac957",
+      "checked_out_sha" => "cf392920cdbe9cd07689f1f4b603271940bac957",
+      "pom_files" => ["pom.xml"],
+      "modules" => []
+    },
     "timings_ms" => %{"execution" => 12},
     "errors" => []
   }
@@ -73,6 +80,11 @@ defmodule PatchwritApiWeb.WorkerCallbackControllerTest do
     updated = Analyses.get_analysis!(analysis.id)
     assert updated.status == "completed"
     assert updated.result["worker_version"] == "0.1.0"
+
+    assert updated.result["repository"]["checked_out_sha"] ==
+             "cf392920cdbe9cd07689f1f4b603271940bac957"
+
+    assert updated.result["repository"]["pom_files"] == ["pom.xml"]
     assert updated.machine_cleanup_status == "destroyed"
   end
 

@@ -40,7 +40,7 @@ defmodule PatchwritApiWeb.WorkerCallbackController do
     result =
       Map.take(
         params,
-        ~w(schema_version job_id status worker_version environment timings_ms errors)
+        ~w(schema_version job_id status worker_version environment repository timings_ms errors)
       )
 
     attrs =

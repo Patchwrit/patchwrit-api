@@ -73,6 +73,28 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           <span :if={@analysis.error_message}>{@analysis.error_message}</span>
         </div>
 
+        <section :if={@analysis.result && @analysis.result["repository"]} class="pw-result">
+          <div class="pw-result-head">
+            <div>
+              <span class="pw-panel-kicker">Checkout evidence</span>
+              <h2>Repository checkout</h2>
+            </div>
+            <p>Cloned and verified inside the worker Machine.</p>
+          </div>
+          <dl class="pw-detail-grid">
+            <div class="pw-detail-item">
+              <dt>Checked-out SHA</dt>
+              <dd class="pw-mono">{@analysis.result["repository"]["checked_out_sha"]}</dd>
+            </div>
+            <div class="pw-detail-item">
+              <dt>POM files</dt>
+              <dd class="pw-mono">
+                {Enum.join(@analysis.result["repository"]["pom_files"] || [], ", ")}
+              </dd>
+            </div>
+          </dl>
+        </section>
+
         <section :if={@analysis.result} class="pw-result">
           <div class="pw-result-head">
             <div>
