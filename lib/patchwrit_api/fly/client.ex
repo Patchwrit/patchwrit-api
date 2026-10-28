@@ -65,6 +65,10 @@ defmodule PatchwritApi.Fly.Client do
           "config" => %{
             "image" => image,
             "env" => env,
+            # Worker Machines are single-shot jobs: a dead worker must
+            # stay dead. Fly's default restart behavior would silently
+            # re-execute the whole job (observed 2026-10-28).
+            "restart" => %{"policy" => "no"},
             "guest" => guest_for(image_key)
           }
         }

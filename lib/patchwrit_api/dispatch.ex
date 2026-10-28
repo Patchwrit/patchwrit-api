@@ -101,7 +101,7 @@ defmodule PatchwritApi.Dispatch do
     poll(analysis.id, deadline)
   end
 
-  defp poll(id, deadline) do
+  defp poll(id, deadline, tick \\ 0) do
     analysis = Analyses.get_analysis!(id)
 
     cond do
@@ -112,11 +112,31 @@ defmodule PatchwritApi.Dispatch do
         fail_and_cleanup(analysis, "worker callback timed out")
         :ok
 
+      machine_gone?(analysis, tick) ->
+        # The worker process exited without a recorded callback (the
+        # callback persists before the worker exits, so a stopped
+        # Machine with a running analysis is a failed job, not a slow
+        # one). Fail in seconds, not at the 900s deadline.
+        fail_and_cleanup(analysis, "worker machine stopped before callback")
+        :ok
+
       true ->
         Process.sleep(@poll_ms)
-        poll(id, deadline)
+        poll(id, deadline, tick + 1)
     end
   end
+
+  # Checked every ~10s of polling to bound Fly API calls.
+  defp machine_gone?(%{machine_id: machine_id}, tick)
+       when is_binary(machine_id) and rem(tick, 10) == 5 do
+    case Client.get_machine(machine_id) do
+      {:ok, %{data: %{state: state}}} -> state in ~w(stopped destroyed)
+      {:error, %{status: 404}} -> true
+      _ -> false
+    end
+  end
+
+  defp machine_gone?(_analysis, _tick), do: false
 
   @doc "Destroys the analysis Machine (if any) and records cleanup. Idempotent."
   def cleanup(analysis) do
