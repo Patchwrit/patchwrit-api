@@ -4,11 +4,37 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
   use PatchwritApiWeb, :live_view
 
   alias PatchwritApi.Analyses
+  alias PatchwritApi.Findings
   import PatchwritApiWeb.AnalysisComponents
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
-    {:ok, assign(socket, :analysis, Analyses.get_analysis!(id))}
+    analysis = Analyses.get_analysis!(id)
+
+    {:ok,
+     socket
+     |> assign(:analysis, analysis)
+     |> assign(:findings, Findings.list_findings_for_analysis(analysis.id))
+     |> assign(:introduced_via, introduced_via_map(analysis))}
+  end
+
+  defp via_label(introduced_via, finding) do
+    key = "#{finding.package_name}:#{finding.package_version}"
+
+    case Map.get(introduced_via, key) do
+      [_ | _] = path -> "via #{List.last(path)}"
+      _ -> nil
+    end
+  end
+
+  # package "group:artifact:version" -> introduction path from the graph,
+  # so a finding can show how the vulnerable package entered the build.
+  defp introduced_via_map(analysis) do
+    dependencies = get_in(analysis.result || %{}, ["dependencies"]) || []
+
+    Map.new(dependencies, fn dep ->
+      {"#{dep["group_id"]}:#{dep["artifact_id"]}:#{dep["version"]}", dep["introduced_via"] || []}
+    end)
   end
 
   @impl true
@@ -110,6 +136,43 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
                 <span>depth {dep["depth"]}</span>
                 <span :if={dep["scope"]}>scope {dep["scope"]}</span>
                 <span>via {dep["introduced_via"] |> List.last()}</span>
+              </div>
+            </li>
+          </ul>
+        </section>
+
+        <section :if={@analysis.status == "completed"} class="pw-result">
+          <div class="pw-result-head">
+            <div>
+              <span class="pw-panel-kicker">OSV scan</span>
+              <h2>Findings ({length(@findings)})</h2>
+            </div>
+            <p :if={@analysis.osv_scanned_at}>
+              Scanned {Calendar.strftime(@analysis.osv_scanned_at, "%Y-%m-%d %H:%M:%S UTC")} against OSV.
+            </p>
+            <p :if={!@analysis.osv_scanned_at}>
+              Not yet scanned. The scan runs automatically after a completed run.
+            </p>
+          </div>
+          <p :if={@analysis.osv_scanned_at && @findings == []}>
+            No known vulnerabilities in the scanned dependencies.
+          </p>
+          <ul class="pw-analysis-list">
+            <li :for={finding <- @findings} class="pw-analysis-row">
+              <span class="pw-mono">{finding.package_name}:{finding.package_version}</span>
+              <span :if={finding.summary}>{finding.summary}</span>
+              <div class="pw-meta">
+                <span>{finding.osv_id}</span>
+                <span :for={alias_name <- finding.aliases}>{alias_name}</span>
+                <span :if={finding.severity}>{finding.severity}</span>
+                <span>
+                  {if finding.fixed_versions == [],
+                    do: "no fix published",
+                    else: "fixed in #{Enum.join(finding.fixed_versions, ", ")}"}
+                </span>
+                <span :if={via_label(@introduced_via, finding)}>
+                  {via_label(@introduced_via, finding)}
+                </span>
               </div>
             </li>
           </ul>

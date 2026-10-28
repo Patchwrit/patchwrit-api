@@ -107,6 +107,66 @@ defmodule PatchwritApiWeb.AnalysisLiveTest do
     assert Repositories.list_repositories() == []
   end
 
+  test "detail page shows findings with severity, fix, and introduction path", %{conn: conn} do
+    {:ok, analysis} =
+      Analyses.create_analysis(%{
+        "repository_url" => @repo,
+        "status" => "completed",
+        "osv_scanned_at" => DateTime.utc_now() |> DateTime.truncate(:second),
+        "result" => %{
+          "dependencies" => [
+            %{
+              "group_id" => "org.apache.logging.log4j",
+              "artifact_id" => "log4j-core",
+              "version" => "2.14.1",
+              "introduced_via" => ["com.example:app:1.0"]
+            }
+          ]
+        }
+      })
+
+    {:ok, _updated} =
+      PatchwritApi.Findings.record_scan(analysis, [
+        %{
+          "osv_id" => "GHSA-jfh8-c2jp-5v3q",
+          "package_name" => "org.apache.logging.log4j:log4j-core",
+          "package_version" => "2.14.1",
+          "summary" => "Apache Log4j2 vulnerable to RCE via JNDI",
+          "severity" => "CVSS:3.1/AV:N",
+          "fixed_versions" => ["2.17.0"],
+          "aliases" => ["CVE-2021-44228"],
+          "raw" => %{"id" => "GHSA-jfh8-c2jp-5v3q"}
+        }
+      ])
+
+    {:ok, _view, html} = live(conn, "/analyses/#{analysis.id}")
+    assert html =~ "Findings (1)"
+    assert html =~ "org.apache.logging.log4j:log4j-core:2.14.1"
+    assert html =~ "CVE-2021-44228"
+    assert html =~ "fixed in 2.17.0"
+    assert html =~ "via com.example:app:1.0"
+  end
+
+  test "detail page distinguishes scanned-clean from not-yet-scanned", %{conn: conn} do
+    {:ok, scanned} =
+      Analyses.create_analysis(%{
+        "repository_url" => @repo,
+        "status" => "completed",
+        "osv_scanned_at" => DateTime.utc_now() |> DateTime.truncate(:second)
+      })
+
+    {:ok, _view, html} = live(conn, "/analyses/#{scanned.id}")
+    assert html =~ "Findings (0)"
+    assert html =~ "No known vulnerabilities"
+
+    {:ok, unscanned} =
+      Analyses.create_analysis(%{"repository_url" => @repo, "status" => "completed"})
+
+    {:ok, _view, html} = live(conn, "/analyses/#{unscanned.id}")
+    assert html =~ "Not yet scanned"
+    refute html =~ "No known vulnerabilities"
+  end
+
   test "detail page shows JDK, status, and cleanup state", %{conn: conn} do
     {:ok, repository} =
       Repositories.create_repository(%{
