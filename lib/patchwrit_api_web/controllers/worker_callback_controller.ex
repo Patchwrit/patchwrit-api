@@ -13,7 +13,11 @@ defmodule PatchwritApiWeb.WorkerCallbackController do
   alias PatchwritApi.Analyses
   alias PatchwritApi.Dispatch
 
-  @max_payload_bytes 256 * 1024
+  # Bounded, but sized for real multi-module graphs: the
+  # spring-petclinic-microservices reactor (9 modules, 1,551
+  # dependencies) produces a ~767 KB result. 4 MB leaves headroom
+  # while still rejecting unbounded payloads.
+  @max_payload_bytes 4 * 1024 * 1024
 
   def create(conn, %{"id" => id} = params) do
     analysis = Analyses.get_analysis(id)
