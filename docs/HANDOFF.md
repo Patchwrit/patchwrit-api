@@ -45,7 +45,7 @@ CALLBACK_BASE_URL=https://<tunnel-url> op run --env-file=.env.op -- mix phx.serv
 `op run` resolves references in memory (Touch ID) and injects them into
 the server process; secrets never touch disk, shell history, or Git.
 One-time setup: enable desktop-app CLI integration (or `op signin`) and
-create item `Patchwrit Fly` in vault `Private` with the Fly token in the
+create item `Patchwrit Fly` in vault `Personal` with the Fly token in the
 `password` field. Production must use platform secrets (e.g. Fly
 secrets), not this file.
 
