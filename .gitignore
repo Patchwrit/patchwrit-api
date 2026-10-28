@@ -36,6 +36,10 @@ npm-debug.log
 /assets/node_modules/
 
 
+# Local 1Password env file for `op run` (holds op:// references only,
+# plus non-secret values; ignored so vault/item names stay local too).
+/.env.op
+
 # Local checkout of the separate patchwrit-worker repo (own Git history).
 # Nested here only so both repos live in one workspace; never commit it.
 /patchwrit-worker/
