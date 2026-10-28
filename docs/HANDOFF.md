@@ -239,3 +239,48 @@ a phase-one-end optimization candidate, not a correctness issue.
 over persisted findings. Deferred to phase-one end (owner direction):
 external review, UI improvements, scan-performance optimization,
 malicious-POM security review. OSS license still pending.
+
+## Session log — 2026-10-28 (contract v2 reactor proof, sizing, instrumentation)
+
+**Working:** worker PRs #19–#22 and API PRs #36–#40. Contract v2 resolves
+each reactor module separately, verifies tree roots, records module/POM
+provenance, all introduction paths, and explicit graph completeness.
+JDK worker Machines now use `performance` 2 CPUs / 4096 MB; worker
+Machines use Fly restart policy `no`, Phoenix fails fast if a Machine
+stops before callback, Maven/lifecycle logs stream to the Machine
+console, and the bounded callback limit is 4 MB. Phoenix persists stage
+timings (`dispatch_ms`, `scan_ms`, `investigate_ms`) and the analysis
+page renders per-module durations and download totals.
+
+**Incidents found by live testing:** the first reactor run timed out at
+`shared-cpu-1x` / 1024 MB; a later run exposed Fly restarting a dead
+worker when no restart policy was set; the first performance-sized run
+resolved in 28.2 s but its 766,929-byte callback was rejected by the
+old 256 KB limit. Each failure was recorded honestly, Machines were
+destroyed, and no partial result was labelled complete.
+
+**Live proof:** spring-petclinic-microservices (`main`, JDK 17),
+analysis `b2aa33e7-7757-4f6d-8f72-a76ce512fd22`, Machine
+`4d8911401b2778`, image
+`ghcr.io/patchwrit/patchwrit-worker@sha256:82bdb677fe982fdd3f32d0804c7840e47c04c56228b79ebb0711b832e0e2579f`:
+pinned SHA `e8b747ab522721076cacb5cf688eb8a54ba8c5c9`, **graph complete
+9/9 modules**, **1,551 dependencies**, checked-out source tree measured
+separately at 2,572,057 bytes / 228 files (`.git` objects 9,260,688
+bytes), 2,895 downloaded artifacts / 24,171,028 bytes, stored result
+JSON text 795,345 bytes, worker Maven 24,062 ms, dispatch 32,023 ms, OSV scan
+20,202 ms with **174 findings**, Investigator built **174 cases** in
+200 ms; analysis `completed`, cleanup `destroyed`, Fly app empty. No
+case carried `dependency_graph_incomplete`.
+
+**Metrics note (owner, low priority):** real users need project/graph
+metrics, not just internal timings. Future work should persist and
+display source/checkout size where measurable, downloaded artifacts
+and bytes, dependency/module counts, payload bytes, stage durations,
+finding/case counts, and estimated run cost. These are product metrics,
+not nice-to-have decoration; schedule after tribunal correctness.
+
+**Next:** tribunal engine (Prosecutor/Defender/Judge) over persisted
+cases. Reactor scale/adversarial budgets remain in API issue #41;
+nested/profile reactor fixtures remain follow-up evidence under worker
+issues #12/#13. Streaming worker logs into the Phoenix UI remains a
+post-phase observability item.

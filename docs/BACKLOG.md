@@ -29,5 +29,13 @@
 - [ ] Readme/setup/license/security review.
 - [ ] Three-minute reproducible demo and submission.
 
+## Low-priority product metrics (owner note, 2026-10-28)
+
+- [ ] Persist/display user-facing run metrics where measurable: source
+  or checkout size, downloaded artifacts and bytes, module/dependency
+  counts, callback payload bytes, stage durations, finding/case counts,
+  and estimated run cost. Real users need these to understand scale,
+  time, and cost; not a tribunal blocker.
+
 ## Stretch
 Additional JDK versions; bytecode call graphs; deeper policy configuration; more ecosystems and private repositories.
