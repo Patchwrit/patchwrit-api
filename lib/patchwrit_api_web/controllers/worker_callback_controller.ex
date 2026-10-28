@@ -12,6 +12,7 @@ defmodule PatchwritApiWeb.WorkerCallbackController do
 
   alias PatchwritApi.Analyses
   alias PatchwritApi.Dispatch
+  alias PatchwritApi.Log
 
   # Bounded, but sized for real multi-module graphs: the
   # spring-petclinic-microservices reactor (9 modules, 1,551
@@ -24,15 +25,26 @@ defmodule PatchwritApiWeb.WorkerCallbackController do
 
     cond do
       is_nil(analysis) ->
+        Log.warning("callback.rejected", %{analysis_id: id, reason: "not_found"})
         render_error(conn, 404, "analysis not found")
 
       not authorized?(conn, analysis) ->
+        Log.warning("callback.rejected", %{analysis_id: id, reason: "unauthorized"})
         render_error(conn, 401, "unauthorized")
 
       analysis.status in ~w(completed failed cancelled) ->
+        Log.info("callback.duplicate", %{analysis_id: id, status: analysis.status})
         json(conn, %{status: "already_recorded"})
 
       not valid_payload?(params, id) ->
+        Log.warning("callback.rejected", %{
+          analysis_id: id,
+          reason: "invalid_payload",
+          schema_version: params["schema_version"],
+          payload_job_id: params["job_id"],
+          payload_bytes: byte_size(Jason.encode!(params))
+        })
+
         render_error(conn, 422, "invalid worker payload")
 
       true ->
@@ -64,11 +76,24 @@ defmodule PatchwritApiWeb.WorkerCallbackController do
 
     with {:ok, analysis} <- Analyses.update_analysis(analysis, attrs),
          {:ok, analysis} <- Analyses.transition(analysis, terminal_status(params["status"])) do
+      Log.info("callback.recorded", %{
+        analysis_id: analysis.id,
+        worker_status: params["status"],
+        payload_bytes: byte_size(Jason.encode!(params)),
+        dependencies: length(params["dependencies"] || []),
+        graph_complete: get_in(params, ["graph", "complete"]),
+        modules_total: get_in(params, ["graph", "modules_total"]),
+        modules_resolved: get_in(params, ["graph", "modules_resolved"]),
+        error_category: analysis.error_category
+      })
+
       Dispatch.cleanup(analysis)
       maybe_enqueue_scan(analysis, params)
       json(conn, %{status: "recorded"})
     else
-      _ -> render_error(conn, 422, "could not record result")
+      _ ->
+        Log.error("callback.record_failed", %{analysis_id: analysis.id})
+        render_error(conn, 422, "could not record result")
     end
   end
 
