@@ -1,0 +1,169 @@
+# Patchwrit — Future Vision
+
+**Status:** Owner-discussed direction, 2026-10-28. This records ideas
+that are essential to the long-term product but are **not** all part of
+the current hackathon tribunal milestone.
+
+Patchwrit's long-term shape is not merely a vulnerability scanner. It
+is a supply-chain evidence and decision system:
+
+```text
+Resolve → Find → Investigate → Enrich → Debate → Decide
+        → Propose → Verify → Human approval → Monitor
+```
+
+The current bounded milestone remains:
+
+```text
+Evidence dossier → Prosecutor → Defender → Judge
+                 → Phoenix policy → human-readable recommendation
+```
+
+## Near-term design refinement: case grouping
+
+Investigator cases are currently one per OSV finding. Real reactors
+can produce many findings for the same package, version, or advisory
+across modules. Before the tribunal engine spends model calls, group
+related findings into a **case family** — for example, same package +
+version + advisory across modules — while preserving each module's
+provenance. This affects tribunal cost, data modelling, and verdict
+quality, so it must be decided before or during tribunal design.
+
+## Future evidence roles
+
+### Source Investigator
+
+Extend the deterministic Investigator beyond dependency provenance.
+Collect source-level evidence at the pinned SHA only when actually
+observed: imports, class or method references, relevant configuration,
+production/test usage, and possible call paths. This improves the
+relevance debate but must never be presented as proof of
+exploitability without stronger evidence.
+
+### Librarian
+
+Deterministically enrich cases with advisory intelligence beyond the
+initial OSV match, where reliable sources exist: known-exploited
+status, exploit maturity or probability signals, fixed-version release
+information, upgrade distance (patch/minor/major), and advisory
+changes since a previous scan. The Librarian supplies facts; it does
+not argue the case.
+
+### Context Keeper
+
+Technical evidence is not organizational risk. Tracked repositories
+should eventually carry human-supplied context: internet exposure,
+production/internal status, data sensitivity, service criticality,
+ownership, and policy deadlines. Agents may use this context but must
+not invent it.
+
+## Future action loop
+
+### Remediator
+
+After a Judge recommendation, a Remediator may propose a concrete,
+evidence-backed dependency update. A proposal is only an opinion
+until it is tested.
+
+### Verifier
+
+Apply a proposed change only inside an ephemeral environment, resolve
+the graph again, run feasible build/test checks, and confirm the
+vulnerable version disappeared without obvious breakage. Remediation
+without verification is not a completed action.
+
+### Human decision, override, and appeal
+
+A Judge verdict is advisory. Record human decisions and overrides,
+including the reason. Allow a case to be reopened when new evidence,
+advisory changes, deployment context, or source analysis materially
+changes the picture.
+
+## Lifecycle and audit
+
+An **Auditor/Historian** function should track each case over time:
+newly disclosed, still present, fixed, reintroduced, advisory changed,
+new fixed version available, dependency removed, human-accepted, or
+superseded. Scheduled rescans should show deltas rather than treating
+every run as an unrelated snapshot.
+
+## Evaluation
+
+The tribunal needs a known-answer evaluation set before its language
+is trusted at scale. Measure citation validity, unsupported
+reachability or exploitability claims, inappropriate dismissals,
+repeatability, latency, and cost per verdict. Persuasive prose is not
+quality unless it survives these checks.
+
+## Surrounding roles (ad hoc, as time allows)
+
+None of these are required for the tribunal to work. They are the
+organs that can grow around it, each respecting the same split:
+deterministic systems gather, schedule, verify, and remember; models
+argue and explain; humans decide.
+
+- **Intake Concierge** — decides *when* a rescan is worth running
+  (new commit, newly published advisory, new fixed version) instead of
+  scanning on a fixed schedule.
+- **Portfolio Risk Manager** — looks across all tracked repositories:
+  shared vulnerable dependencies, common parents worth fixing once,
+  and organization-level exposure no single case can see.
+- **Benchmark Judge** — continuously grades the tribunal itself with
+  known-answer cases: citation validity, unsupported-claim rate,
+  repeatability, cost per verdict. The court, audited.
+- **Release Manager** — after human approval, shepherds a verified
+  PR: watches CI, notices the merge, triggers the confirmation
+  rescan, and closes the case only when the vulnerable version is
+  actually gone.
+- **Incident Responder** — when a major vulnerability drops, skips
+  the queue: rescans everything tracked, groups the blast radius, and
+  fronts the worst cases with dossiers pre-built.
+- **Explainer** — translates one verdict per audience: introduction
+  path and diff for the developer, portfolio risk and deadlines for
+  the manager, immutable evidence chain for the auditor. Same facts,
+  different language.
+
+## Policy Officer
+
+Technical verdicts are not organizational decisions. A Policy Officer
+encodes an organization's own rules as deterministic policy that the
+tribunal is judged against, for example:
+
+- No critical findings in internet-facing production services.
+- Test-scope findings get a longer remediation window than
+  compile/runtime scope.
+- Accepted risks expire and must be re-approved, never permanent.
+- Certain ecosystems, licenses, or unmaintained dependencies are
+  disallowed regardless of known vulnerabilities.
+- Escalation paths differ by service criticality and data sensitivity.
+
+The nuances are the value: scope, exposure, criticality, deadlines,
+exceptions, and expiry. Models may explain how a case interacts with
+policy; Phoenix enforces policy. Policy itself is versioned, so a
+verdict can be traced to the rules in force when it was made.
+
+## Conversational interface
+
+A chatbot (Slack, Teams, GitHub, or web) is the natural front door to
+a case file. A developer should be able to ask "why is this urgent?",
+"show me how this dependency gets in", "what changed since last
+week?", or "I disagree — this module is being deleted" and receive
+answers grounded in the persisted dossier with cited evidence.
+
+The chatbot is an **interface, not a decision-maker**:
+
+- It reads cases, verdicts, history, and policy; it does not invent
+  evidence or override the policy gate.
+- Actions it offers (request rescan, record an override, appeal a
+  verdict, approve a verified PR) go through the same Phoenix APIs,
+  permissions, and audit trail as the web UI.
+- Every answer distinguishes tool-observed facts, model argument,
+  Judge recommendation, and enforced policy — the same separation as
+  the analysis page.
+
+## Operating principle
+
+Models argue from evidence. Deterministic systems establish facts,
+group and enrich cases, validate citations, enforce budgets and
+policy, verify proposed changes, and preserve history. Humans remain
+responsible for action.
