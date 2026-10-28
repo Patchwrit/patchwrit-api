@@ -1,5 +1,6 @@
 defmodule PatchwritApiWeb.WorkerCallbackControllerTest do
   use PatchwritApiWeb.ConnCase, async: false
+  use Oban.Testing, repo: PatchwritApi.Repo
 
   alias PatchwritApi.Analyses
 
@@ -103,6 +104,11 @@ defmodule PatchwritApiWeb.WorkerCallbackControllerTest do
              updated.result["dependencies"]
 
     assert updated.machine_cleanup_status == "destroyed"
+
+    assert_enqueued(
+      worker: PatchwritApi.Workers.ScanAnalysis,
+      args: %{"analysis_id" => analysis.id}
+    )
   end
 
   test "rejects a wrong token and persists nothing", %{conn: conn, analysis: analysis} do
