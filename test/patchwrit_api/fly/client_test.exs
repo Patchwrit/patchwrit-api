@@ -177,6 +177,8 @@ defmodule PatchwritApi.Fly.ClientTest do
              "memory_mb" => 4096
            }
 
+    assert payload["config"]["restart"] == %{"policy" => "no"}
+
     assert {:ok, "ghcr.io/patchwrit/patchwrit-worker@sha256:jdk17"} =
              Client.selected_worker_image("jdk17")
   end
