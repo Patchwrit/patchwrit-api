@@ -35,6 +35,7 @@
 - [ ] Tribunal evaluation set: citation validity, unsupported-claim rate, repeatability, latency, and cost per verdict.
 - [ ] Policy Officer: versioned organizational policy (scope/exposure/criticality SLAs, expiring risk acceptances, escalation) enforced deterministically by Phoenix.
 - [ ] Conversational interface: chatbot over persisted cases/verdicts/history/policy with cited evidence; actions flow through the same APIs, permissions, and audit trail. Interface, not decision-maker.
+- [ ] Surrounding roles, ad hoc as time allows: Intake Concierge (rescan triggers), Portfolio Risk Manager (cross-repo patterns), Benchmark Judge (tribunal self-evaluation), Release Manager (approved-PR shepherding to confirmed fix), Incident Responder (blast-radius mode for major CVEs), Explainer (per-audience verdict translation).
 
 ## P1/P2 — Action and delivery
 - [ ] Controlled patch test within ephemeral VM.

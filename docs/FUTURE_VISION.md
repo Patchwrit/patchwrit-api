@@ -95,6 +95,34 @@ reachability or exploitability claims, inappropriate dismissals,
 repeatability, latency, and cost per verdict. Persuasive prose is not
 quality unless it survives these checks.
 
+## Surrounding roles (ad hoc, as time allows)
+
+None of these are required for the tribunal to work. They are the
+organs that can grow around it, each respecting the same split:
+deterministic systems gather, schedule, verify, and remember; models
+argue and explain; humans decide.
+
+- **Intake Concierge** — decides *when* a rescan is worth running
+  (new commit, newly published advisory, new fixed version) instead of
+  scanning on a fixed schedule.
+- **Portfolio Risk Manager** — looks across all tracked repositories:
+  shared vulnerable dependencies, common parents worth fixing once,
+  and organization-level exposure no single case can see.
+- **Benchmark Judge** — continuously grades the tribunal itself with
+  known-answer cases: citation validity, unsupported-claim rate,
+  repeatability, cost per verdict. The court, audited.
+- **Release Manager** — after human approval, shepherds a verified
+  PR: watches CI, notices the merge, triggers the confirmation
+  rescan, and closes the case only when the vulnerable version is
+  actually gone.
+- **Incident Responder** — when a major vulnerability drops, skips
+  the queue: rescans everything tracked, groups the blast radius, and
+  fronts the worst cases with dossiers pre-built.
+- **Explainer** — translates one verdict per audience: introduction
+  path and diff for the developer, portfolio risk and deadlines for
+  the manager, immutable evidence chain for the auditor. Same facts,
+  different language.
+
 ## Policy Officer
 
 Technical verdicts are not organizational decisions. A Policy Officer
