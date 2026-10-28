@@ -65,11 +65,7 @@ defmodule PatchwritApi.Fly.Client do
           "config" => %{
             "image" => image,
             "env" => env,
-            "guest" => %{
-              "cpu_kind" => "shared",
-              "cpus" => 1,
-              "memory_mb" => if(image_key in ["jdk17", "jdk21"], do: 1024, else: 256)
-            }
+            "guest" => guest_for(image_key)
           }
         }
         |> maybe_put_name(name)
@@ -79,6 +75,19 @@ defmodule PatchwritApi.Fly.Client do
   end
 
   def create_worker_machine(_attrs), do: invalid("worker machine attributes must be a map")
+
+  # JDK worker Machines resolve real Maven reactors: dedicated
+  # performance CPUs and 4 GB avoid the shared-CPU throttling that made
+  # multi-module resolution exceed the dispatch timeout
+  # (spring-petclinic-microservices, 2026-10-28). At per-second billing
+  # this costs ~$0.02 per worst-case run. Smoke Machines stay minimal.
+  defp guest_for(image_key) when image_key in ["jdk17", "jdk21"] do
+    %{"cpu_kind" => "performance", "cpus" => 2, "memory_mb" => 4096}
+  end
+
+  defp guest_for(_image_key) do
+    %{"cpu_kind" => "shared", "cpus" => 1, "memory_mb" => 256}
+  end
 
   @doc "Returns the configured digest-pinned image reference for an image key."
   @spec selected_worker_image(String.t()) :: {:ok, String.t()} | {:error, error()}
