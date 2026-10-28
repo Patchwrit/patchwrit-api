@@ -165,3 +165,37 @@ dependencies** persisted and displayed, timings clone 1026 ms / Maven 15592 ms
 
 **Next:** W6e OSV scan with persisted findings and a minimal findings view.
 Then JDK 21 image, then tribunal agents. OSS license still pending.
+
+## Session log — 2026-10-27/28 (W6e OSV findings + W6f DVJA proof)
+
+**Working:** API PRs #20 (backend) and #21 (UI). After a completed callback
+persists dependencies, an Oban `ScanAnalysis` job queries OSV
+(`querybatch`, then per-hit detail fetches), replaces the analysis's
+`findings` wholesale, and stamps `osv_scanned_at` — including zero-hit
+scans. OSV errors record nothing (fail closed; job retries). The analysis
+page renders a Findings section (coordinate, GHSA/CVE, severity, fixed
+version, introduction path) with honest "not yet scanned" vs "scanned,
+no known vulnerabilities" states. Local dev secrets now resolve via
+1Password `op run` (PR #22; item `Patchwrit Fly` in vault `Personal`,
+`.env.op` gitignored, references only).
+
+**Live proofs (same evening):**
+- PetClinic re-run `9f2daf71-7583-4800-a985-e701925fa23b` (the day-one
+  analysis predated the scan hook): completed, destroyed, auto-scanned —
+  **Findings (0)**, a true clean scan.
+- DVJA (`appsecco/dvja`, `master`, JDK 17) analysis
+  `aedef0a5-cd29-4768-aba1-2513ba7c52b1`, Machine `6e82dd759f7158`, pinned
+  SHA `597ece1ab79ffffea7289d49b0c443bb2ebcbd16`: 62 dependencies, timings
+  clone 893 ms / Maven 14186 ms / execution 16284 ms, then **93 findings**
+  persisted and rendered (e.g. `struts2-core 2.3.30`,
+  `commons-collections 3.1` CVE-2015-7501, `log4j-core` era entries);
+  completed, cleanup `destroyed`, `GET /api/v1/test-machines` returned
+  `{"data":[]}` — no orphans. DVJA was never executed anywhere; only its
+  POM graph was read inside the ephemeral Machine.
+
+**Next:** merge PR #22, then JDK 21 worker image. Outstanding security
+topic (owner-flagged, deferred): preventing malicious code execution
+from untrusted POMs/build files — today the worker never runs repo
+builds or `mvnw` and Maven children get a scrubbed env, but this needs
+its own review pass before arbitrary-repo intake. Then tribunal agents.
+OSS license still pending.
