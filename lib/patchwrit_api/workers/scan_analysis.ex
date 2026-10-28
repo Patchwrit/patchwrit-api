@@ -23,8 +23,13 @@ defmodule PatchwritApi.Workers.ScanAnalysis do
 
   defp scan(analysis) do
     case Osv.scan_analysis(analysis) do
-      {:ok, _analysis} -> :ok
-      {:error, message} -> {:error, message}
+      {:ok, analysis} ->
+        # Chain: fresh findings get Investigator evidence packets.
+        PatchwritApi.Workers.InvestigateAnalysis.enqueue(analysis)
+        :ok
+
+      {:error, message} ->
+        {:error, message}
     end
   end
 end
