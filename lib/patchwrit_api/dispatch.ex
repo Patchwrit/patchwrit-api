@@ -9,12 +9,20 @@ defmodule PatchwritApi.Dispatch do
 
   alias PatchwritApi.Analyses
   alias PatchwritApi.Fly.Client
+  alias PatchwritApi.Log
 
   @poll_ms 1_000
 
   def run(analysis_id) do
     started = System.monotonic_time(:millisecond)
     analysis = Analyses.get_analysis!(analysis_id)
+
+    Log.info("dispatch.started", %{
+      analysis_id: analysis.id,
+      repository_url: analysis.repository_url,
+      requested_ref: analysis.requested_ref,
+      jdk: analysis.jdk_version
+    })
 
     result =
       cond do
@@ -31,8 +39,15 @@ defmodule PatchwritApi.Dispatch do
 
     case Analyses.get_analysis(analysis_id) do
       %{status: status} = finished when status in ~w(completed failed cancelled) ->
-        Analyses.merge_timings(finished, %{
-          "dispatch_ms" => System.monotonic_time(:millisecond) - started
+        duration_ms = System.monotonic_time(:millisecond) - started
+        Analyses.merge_timings(finished, %{"dispatch_ms" => duration_ms})
+
+        Log.info("dispatch.finished", %{
+          analysis_id: finished.id,
+          status: status,
+          cleanup: finished.machine_cleanup_status,
+          error_category: finished.error_category,
+          duration_ms: duration_ms
         })
 
       _ ->
@@ -45,9 +60,11 @@ defmodule PatchwritApi.Dispatch do
   defp dispatch(analysis) do
     with {:ok, analysis} <- Analyses.transition(analysis, "provisioning"),
          {:ok, sha} <- resolve_sha(analysis),
+         :ok <- log_sha_resolved(analysis, sha),
          {:ok, analysis} <- Analyses.update_analysis(analysis, %{"resolved_sha" => sha}),
          {:ok, token, analysis} <- issue_callback_token(analysis),
          {:ok, created} <- Client.create_worker_machine(worker_attrs(analysis, sha, token)),
+         :ok <- log_machine_created(analysis, created),
          {:ok, analysis} <-
            Analyses.update_analysis(analysis, %{
              "machine_id" => created.data.id,
@@ -61,6 +78,21 @@ defmodule PatchwritApi.Dispatch do
       {:error, message} when is_binary(message) -> fail_and_cleanup(analysis, message)
       {:error, _changeset} -> fail_and_cleanup(analysis, "failed to persist dispatch state")
     end
+  end
+
+  defp log_sha_resolved(analysis, sha) do
+    Log.info("repository.sha_resolved", %{analysis_id: analysis.id, resolved_sha: sha})
+    :ok
+  end
+
+  defp log_machine_created(analysis, created) do
+    Log.info("machine.created", %{
+      analysis_id: analysis.id,
+      machine_id: created.data.id,
+      worker_image: worker_image_label(analysis)
+    })
+
+    :ok
   end
 
   defp resolve_sha(analysis) do
@@ -109,10 +141,20 @@ defmodule PatchwritApi.Dispatch do
         :ok
 
       System.monotonic_time(:second) > deadline ->
+        Log.warning("dispatch.callback_timeout", %{
+          analysis_id: analysis.id,
+          machine_id: analysis.machine_id
+        })
+
         fail_and_cleanup(analysis, "worker callback timed out")
         :ok
 
       machine_gone?(analysis, tick) ->
+        Log.warning("machine.stopped_before_callback", %{
+          analysis_id: analysis.id,
+          machine_id: analysis.machine_id
+        })
+
         # The worker process exited without a recorded callback (the
         # callback persists before the worker exits, so a stopped
         # Machine with a running analysis is a failed job, not a slow
@@ -142,8 +184,22 @@ defmodule PatchwritApi.Dispatch do
   def cleanup(analysis) do
     if analysis.machine_id do
       case Client.delete_machine(analysis.machine_id) do
-        {:ok, _} -> Analyses.set_cleanup_status(analysis, "destroyed")
-        {:error, _} -> Analyses.set_cleanup_status(analysis, "failed")
+        {:ok, _} ->
+          Log.info("machine.destroyed", %{
+            analysis_id: analysis.id,
+            machine_id: analysis.machine_id
+          })
+
+          Analyses.set_cleanup_status(analysis, "destroyed")
+
+        {:error, error} ->
+          Log.error("machine.cleanup_failed", %{
+            analysis_id: analysis.id,
+            machine_id: analysis.machine_id,
+            fly_status: error.status
+          })
+
+          Analyses.set_cleanup_status(analysis, "failed")
       end
     else
       Analyses.set_cleanup_status(analysis, "destroyed")
