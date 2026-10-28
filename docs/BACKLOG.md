@@ -3,7 +3,7 @@
 **Deadline: Nov 4, 2026 at 18:00 Pacific.** Boxes represent *verified work*, not plans.
 
 ## P0 — Bootstrap
-- [ ] Select OSS license.
+- [x] Select OSS license. (Apache-2.0; see `LICENSE`.)
 - [x] Initialize Phoenix app in existing `patchwrit-api` repository, preserve README/docs.
 - [x] Create separate `patchwrit-worker` Go repository. (Exists separately; owner-handled, integrated later.)
 - [x] Configure Fly worker app and scoped token. (App `patchwrit-machines`; 30-day deploy token held by owner, env-only.)
