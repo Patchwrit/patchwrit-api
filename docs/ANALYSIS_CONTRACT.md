@@ -81,7 +81,7 @@ secret, or GitHub write credential is ever placed in a Machine.
 
 `POST /api/v1/worker-callbacks/:analysis_id` with
 `Authorization: Bearer <PATCHWRIT_CALLBACK_TOKEN>`, JSON body, bounded
-(max 256 KB; Phoenix rejects larger payloads).
+(max 4 MB; Phoenix rejects larger payloads).
 
 ```json
 {

@@ -93,6 +93,12 @@ defmodule PatchwritApiWeb.WorkerCallbackControllerTest do
     |> post("/api/v1/worker-callbacks/#{analysis.id}", %{@payload | "job_id" => analysis.id})
   end
 
+  defp callback_payload(conn, analysis, payload) do
+    conn
+    |> put_req_header("authorization", "Bearer job-secret")
+    |> post("/api/v1/worker-callbacks/#{analysis.id}", payload)
+  end
+
   test "records the result, completes the analysis, and cleans up", %{
     conn: conn,
     analysis: analysis
@@ -144,6 +150,41 @@ defmodule PatchwritApiWeb.WorkerCallbackControllerTest do
 
     assert json_response(mismatched, 422)
     assert Analyses.get_analysis!(analysis.id).status == "running"
+  end
+
+  test "accepts a real-reactor-sized payload but rejects beyond 4 MB", %{
+    conn: conn,
+    analysis: analysis
+  } do
+    big = %{
+      @payload
+      | "job_id" => analysis.id,
+        "environment" => %{"go_version" => String.duplicate("x", 300_000)}
+    }
+
+    conn = callback_payload(conn, analysis, big)
+    assert %{"status" => "recorded"} = json_response(conn, 200)
+
+    {:ok, second} =
+      Analyses.create_analysis(%{
+        "repository_url" => "https://github.com/spring-petclinic/spring-framework-petclinic"
+      })
+
+    {:ok, second} = Analyses.transition(second, "provisioning")
+    {:ok, second} = Analyses.transition(second, "running")
+    hash = :crypto.hash(:sha256, "job-secret") |> Base.encode16(case: :lower)
+
+    {:ok, second} =
+      Analyses.update_analysis(second, %{"machine_id" => "m1", "callback_token_hash" => hash})
+
+    oversize = %{
+      @payload
+      | "job_id" => second.id,
+        "environment" => %{"go_version" => String.duplicate("x", 4_200_000)}
+    }
+
+    conn = callback_payload(build_conn(), second, oversize)
+    assert json_response(conn, 422)
   end
 
   test "rejects a wrong token and persists nothing", %{conn: conn, analysis: analysis} do
