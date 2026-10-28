@@ -167,6 +167,40 @@ defmodule PatchwritApiWeb.AnalysisLiveTest do
     refute html =~ "No known vulnerabilities"
   end
 
+  test "detail page shows stage timings and per-module instrumentation", %{conn: conn} do
+    {:ok, analysis} =
+      Analyses.create_analysis(%{
+        "repository_url" => @repo,
+        "status" => "completed",
+        "timings" => %{"dispatch_ms" => 1200, "scan_ms" => 340},
+        "result" => %{
+          "graph" => %{
+            "complete" => true,
+            "modules_total" => 1,
+            "modules_resolved" => 1,
+            "downloaded_artifacts" => 643,
+            "downloaded_bytes" => 17_965_539,
+            "modules" => [
+              %{
+                "module" => "com.example:app",
+                "pom_path" => "pom.xml",
+                "status" => "resolved",
+                "duration_ms" => 17691,
+                "dependencies" => 42
+              }
+            ]
+          }
+        }
+      })
+
+    {:ok, _view, html} = live(conn, "/analyses/#{analysis.id}")
+    assert html =~ "Stage timings"
+    assert html =~ "dispatch_ms"
+    assert html =~ "643 files"
+    assert html =~ "com.example:app"
+    assert html =~ "17691 ms"
+  end
+
   test "detail page shows JDK, status, and cleanup state", %{conn: conn} do
     {:ok, repository} =
       Repositories.create_repository(%{

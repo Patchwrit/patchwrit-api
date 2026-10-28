@@ -129,6 +129,17 @@ defmodule PatchwritApi.Tribunal.InvestigatorTest do
     assert Tribunal.count_cases_for_analysis(analysis.id) == 2
   end
 
+  test "investigation records stage timings", %{analysis: analysis} do
+    assert :ok =
+             perform_job(PatchwritApi.Workers.InvestigateAnalysis, %{
+               "analysis_id" => analysis.id
+             })
+
+    timings = Analyses.get_analysis!(analysis.id).timings
+    assert is_integer(timings["investigate_ms"])
+    assert timings["cases"] == 2
+  end
+
   test "a completed scan chains into investigation", %{analysis: analysis} do
     Req.Test.set_req_test_to_shared()
 

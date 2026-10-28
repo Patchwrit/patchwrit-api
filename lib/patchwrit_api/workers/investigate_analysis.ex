@@ -19,7 +19,14 @@ defmodule PatchwritApi.Workers.InvestigateAnalysis do
         {:cancel, "analysis not found"}
 
       analysis ->
-        {:ok, _cases} = Investigator.investigate_analysis(analysis)
+        started = System.monotonic_time(:millisecond)
+        {:ok, cases} = Investigator.investigate_analysis(analysis)
+
+        Analyses.merge_timings(analysis, %{
+          "investigate_ms" => System.monotonic_time(:millisecond) - started,
+          "cases" => length(cases)
+        })
+
         :ok
     end
   end

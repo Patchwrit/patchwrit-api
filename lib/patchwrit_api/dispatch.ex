@@ -13,19 +13,33 @@ defmodule PatchwritApi.Dispatch do
   @poll_ms 1_000
 
   def run(analysis_id) do
+    started = System.monotonic_time(:millisecond)
     analysis = Analyses.get_analysis!(analysis_id)
 
-    cond do
-      analysis.status in ~w(completed failed cancelled) ->
-        :ok
+    result =
+      cond do
+        analysis.status in ~w(completed failed cancelled) ->
+          :ok
 
-      is_nil(callback_base_url()) ->
-        fail(analysis, "internal", "CALLBACK_BASE_URL is not configured; refusing to dispatch")
-        :ok
+        is_nil(callback_base_url()) ->
+          fail(analysis, "internal", "CALLBACK_BASE_URL is not configured; refusing to dispatch")
+          :ok
 
-      true ->
-        dispatch(analysis)
+        true ->
+          dispatch(analysis)
+      end
+
+    case Analyses.get_analysis(analysis_id) do
+      %{status: status} = finished when status in ~w(completed failed cancelled) ->
+        Analyses.merge_timings(finished, %{
+          "dispatch_ms" => System.monotonic_time(:millisecond) - started
+        })
+
+      _ ->
+        :ok
     end
+
+    result
   end
 
   defp dispatch(analysis) do
