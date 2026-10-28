@@ -35,9 +35,11 @@ defmodule PatchwritApi.Tribunal.Investigator do
         "artifact_id" => artifact_id,
         "resolved_version" => finding.package_version,
         "scope" => dep && dep["scope"],
+        "module" => dep && dep["module"],
+        "pom_path" => dep && dep["pom_path"],
         "depth" => dep && dep["depth"],
         "direct" => direct?(dep),
-        "introduction_paths" => [dep_introduction_path(dep)]
+        "introduction_paths" => dep_introduction_paths(dep)
       },
       "advisories" => [
         %{
@@ -58,7 +60,7 @@ defmodule PatchwritApi.Tribunal.Investigator do
         "osv_scanned_at" => iso8601(analysis.osv_scanned_at),
         "observed_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> iso8601()
       },
-      "missing_context" => missing_context(dep, finding)
+      "missing_context" => missing_context(dep, finding, analysis)
     }
   end
 
@@ -94,8 +96,16 @@ defmodule PatchwritApi.Tribunal.Investigator do
   defp direct?(%{"depth" => 1}), do: true
   defp direct?(_dep), do: false
 
-  defp dep_introduction_path(nil), do: []
-  defp dep_introduction_path(dep), do: dep["introduced_via"] || []
+  defp dep_introduction_paths(nil), do: []
+
+  defp dep_introduction_paths(dep) do
+    case dep["introduction_paths"] do
+      [_ | _] = paths -> paths
+      _ -> [dep["introduced_via"] || []]
+    end
+  end
+
+  defp dep_introduction_path(dep), do: dep_introduction_paths(dep) |> List.first([])
 
   # -- packet pieces -------------------------------------------------------
 
@@ -105,14 +115,21 @@ defmodule PatchwritApi.Tribunal.Investigator do
     |> Enum.reject(&is_nil/1)
   end
 
-  defp missing_context(dep, finding) do
+  defp missing_context(dep, finding, analysis) do
     base = ["code_reachability_not_evaluated", "source_level_evidence_not_collected"]
 
     base
+    |> add_if(not graph_complete?(analysis), "dependency_graph_incomplete")
     |> add_if(is_nil(dep), "dependency_record_not_found")
     |> add_if(dep && dep_introduction_path(dep) == [], "introduction_path_unavailable")
     |> add_if(finding.fixed_versions == [], "no_fixed_version_published")
     |> add_if(is_nil(finding.severity), "severity_not_reported")
+  end
+
+  # Only an explicit v2 graph block can prove completeness; a missing
+  # block (legacy result) is unknown, which counts as incomplete.
+  defp graph_complete?(analysis) do
+    get_in(analysis.result || %{}, ["graph", "complete"]) == true
   end
 
   defp add_if(list, true, item), do: list ++ [item]

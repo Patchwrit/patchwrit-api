@@ -6,7 +6,7 @@ defmodule PatchwritApiWeb.WorkerCallbackControllerTest do
 
   @stub PatchwritApi.FlyStub
   @payload %{
-    "schema_version" => 1,
+    "schema_version" => 2,
     "job_id" => nil,
     "status" => "completed",
     "worker_version" => "0.1.0",
@@ -30,12 +30,21 @@ defmodule PatchwritApiWeb.WorkerCallbackControllerTest do
         "version" => "10.1.24",
         "scope" => "compile",
         "depth" => 2,
-        "introduced_via" => [
-          "com.example:app:1.0",
-          "org.springframework.boot:spring-boot-starter-web:3.3.0"
+        "module" => "com.example:app",
+        "pom_path" => "pom.xml",
+        "introduction_paths" => [
+          ["com.example:app:1.0", "org.springframework.boot:spring-boot-starter-web:3.3.0"]
         ]
       }
     ],
+    "graph" => %{
+      "complete" => true,
+      "modules_total" => 1,
+      "modules_resolved" => 1,
+      "modules_failed" => [],
+      "dependency_limit_hit" => false,
+      "pom_inventory_truncated" => false
+    },
     "timings_ms" => %{"execution" => 12},
     "errors" => []
   }
@@ -103,12 +112,38 @@ defmodule PatchwritApiWeb.WorkerCallbackControllerTest do
     assert [%{"artifact_id" => "tomcat-embed-core", "depth" => 2}] =
              updated.result["dependencies"]
 
+    assert updated.result["graph"]["complete"] == true
+
     assert updated.machine_cleanup_status == "destroyed"
 
     assert_enqueued(
       worker: PatchwritApi.Workers.ScanAnalysis,
       args: %{"analysis_id" => analysis.id}
     )
+  end
+
+  test "rejects legacy schema and mismatched job identity", %{conn: conn, analysis: analysis} do
+    legacy =
+      conn
+      |> put_req_header("authorization", "Bearer job-secret")
+      |> post("/api/v1/worker-callbacks/#{analysis.id}", %{
+        @payload
+        | "schema_version" => 1,
+          "job_id" => analysis.id
+      })
+
+    assert json_response(legacy, 422)
+
+    mismatched =
+      build_conn()
+      |> put_req_header("authorization", "Bearer job-secret")
+      |> post("/api/v1/worker-callbacks/#{analysis.id}", %{
+        @payload
+        | "job_id" => "00000000-0000-0000-0000-000000000000"
+      })
+
+    assert json_response(mismatched, 422)
+    assert Analyses.get_analysis!(analysis.id).status == "running"
   end
 
   test "rejects a wrong token and persists nothing", %{conn: conn, analysis: analysis} do

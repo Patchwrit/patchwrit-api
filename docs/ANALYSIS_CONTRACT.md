@@ -85,7 +85,7 @@ secret, or GitHub write credential is ever placed in a Machine.
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "job_id": "analysis-uuid",
   "status": "completed",
   "worker_version": "0.1.0",
@@ -108,6 +108,15 @@ secret, or GitHub write credential is ever placed in a Machine.
   Distinct categories are a requirement, not polish (see `ARCHITECTURE.md`).
 - The callback is idempotent: Phoenix stores the first terminal result and
   acknowledges duplicates with `200` without changing the record.
+- **Schema v2:** Phoenix accepts only `schema_version: 2` and requires
+  `job_id` to equal the route's analysis ID. Dependencies carry `module`,
+  `pom_path`, and `introduction_paths`; the result carries a `graph`
+  completeness block (`complete`, `modules_total`, `modules_resolved`,
+  `modules_failed`, `dependency_limit_hit`, `pom_inventory_truncated`).
+  Partial graphs persist as an explicit partial state — OSV scans the
+  observed subset, and downstream tribunal verdicts are capped at
+  `needs_human_review` (deterministic policy). Stored v1 results are
+  legacy: their completeness is unknown, never assumed complete.
 - The worker must still exit 0 on a successfully *reported* failure
   (`status: "failed"` sent, then exit 0); a non-zero exit means the worker
   itself crashed and Phoenix will classify from exit/timeout evidence.

@@ -104,9 +104,12 @@ defmodule PatchwritApi.Tribunal.InvestigatorTest do
   } do
     packet = Investigator.build_packet(analysis, log4j)
 
+    # No v2 graph block on this analysis: completeness is unknown,
+    # which must surface as an explicit incomplete flag.
     assert packet["missing_context"] == [
              "code_reachability_not_evaluated",
-             "source_level_evidence_not_collected"
+             "source_level_evidence_not_collected",
+             "dependency_graph_incomplete"
            ]
 
     packet = Investigator.build_packet(analysis, gson)
