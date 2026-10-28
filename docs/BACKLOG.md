@@ -15,8 +15,8 @@
 - [x] Pin SHA and worker image digest.
 - [x] Go worker executes and returns scoped authenticated callback.
 - [x] Maven transitive dependency graph on PetClinic. (77 dependencies live, analysis `152c8728…`; see HANDOFF.md.)
-- [ ] OSV scan, persisted findings and minimal view.
-- [ ] Vulnerable Java example produces meaningful reproducible finding.
+- [x] OSV scan, persisted findings and minimal view. (PRs #20/#21; findings render on the analysis page.)
+- [x] Vulnerable Java example produces meaningful reproducible finding. (DVJA analysis `aedef0a5…`: 93 findings; see HANDOFF.md.)
 
 ## P1 — AI
 - [ ] Investigator's structured dependency provenance and source evidence.
