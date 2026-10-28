@@ -147,7 +147,7 @@ Proposed verdict envelope (illustrative):
 The exact enum names should be settled with Muse, but the meanings must be unambiguous. A high CVSS score alone does not establish application exploitability.
 
 **Non-negotiable Phoenix policy gate:**
-- If graph.complete=false or graph completeness is unknown, **cap automated verdicts at needs_human_review** and prohibit autonomous remediation or PR creation.
+- If graph.complete=false or graph completeness is unknown, **cap automated verdicts at needs_human_review** and prohibit autonomous remediation or PR creation. The cap forces `recommendation=needs_human_review` even when the Judge suggests dismissal or remediation — but it must **not** be read as evidence of low severity, non-use, or non-exploitability; it records that the evidence is incomplete, nothing more.
 - Reject malformed outputs, fabricated evidence IDs, and references to evidence outside the dossier.
 - Model-generated confidence cannot override deterministic incompleteness rules.
 - In this milestone, **no automatic code changes or PRs** even for complete graphs; the output is advisory.
@@ -159,7 +159,7 @@ Suggested sequence:
 
 1. Worker callback validates schema v2 and persists graph provenance/completeness.
 2. OSV scanning produces versioned findings over the observed graph.
-3. Phoenix assembles a dossier per finding and records an evidence snapshot/version.
+3. Phoenix assembles a dossier per finding and records an evidence snapshot/version. **Retention requirement (audit trail):** a tribunal run must retain the *actual immutable evidence snapshot* it reasoned over — not only a version number or hash. Rescans can delete findings and cascade cases, so a decided verdict and the exact dossier behind it must remain readable afterward. Implementation may use an immutable snapshot column/table or a separately retained run record; choose the smallest durable design.
 4. Oban schedules tribunal execution for selected findings.
 5. Prosecutor and Defender produce separately persisted, validated arguments.
 6. Judge produces a structured recommendation citing dossier evidence.
