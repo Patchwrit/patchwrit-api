@@ -24,7 +24,7 @@ config :patchwrit_api, PatchwritApiWeb.Endpoint,
 
 config :patchwrit_api, Oban,
   repo: PatchwritApi.Repo,
-  queues: [dispatch: 5, scans: 2]
+  queues: [dispatch: 5, scans: 2, tribunal: 2]
 
 # Configure the mailer
 #
