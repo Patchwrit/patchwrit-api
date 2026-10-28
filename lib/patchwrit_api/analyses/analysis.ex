@@ -29,6 +29,7 @@ defmodule PatchwritApi.Analyses.Analysis do
     field :runtime, :map, default: %{}
     field :callback_token_hash, :string
     field :result, :map
+    field :osv_scanned_at, :utc_datetime
     field :error_category, :string
     field :error_message, :string
     field :timings, :map, default: %{}
@@ -54,6 +55,7 @@ defmodule PatchwritApi.Analyses.Analysis do
       :runtime,
       :callback_token_hash,
       :result,
+      :osv_scanned_at,
       :error_category,
       :error_message,
       :timings

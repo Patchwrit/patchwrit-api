@@ -61,11 +61,19 @@ defmodule PatchwritApiWeb.WorkerCallbackController do
     with {:ok, analysis} <- Analyses.update_analysis(analysis, attrs),
          {:ok, analysis} <- Analyses.transition(analysis, terminal_status(params["status"])) do
       Dispatch.cleanup(analysis)
+      maybe_enqueue_scan(analysis, params)
       json(conn, %{status: "recorded"})
     else
       _ -> render_error(conn, 422, "could not record result")
     end
   end
+
+  # Only a completed run with a dependency graph is worth an OSV scan.
+  defp maybe_enqueue_scan(analysis, %{"status" => "completed", "dependencies" => [_ | _]}) do
+    PatchwritApi.Workers.ScanAnalysis.enqueue(analysis)
+  end
+
+  defp maybe_enqueue_scan(_analysis, _params), do: :ok
 
   defp terminal_status("failed"), do: "failed"
   defp terminal_status(_), do: "completed"
