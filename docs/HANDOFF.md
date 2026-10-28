@@ -32,6 +32,23 @@ Go worker -> authenticated result callback -> persisted Oban analysis -> clone p
 - https://github.com/spring-petclinic/spring-framework-petclinic
 - https://github.com/ryanmcmorrowsnyk/vulnerable-java-app
 
+## Local secrets (1Password)
+
+Keys (currently just `FLY_API_TOKEN`, optional `GITHUB_TOKEN`) live in
+1Password; everything else stays plain env values. Local `.env.op`
+(gitignored) holds `op://` references only, plus non-secret values:
+
+```bash
+CALLBACK_BASE_URL=https://<tunnel-url> op run --env-file=.env.op -- mix phx.server
+```
+
+`op run` resolves references in memory (Touch ID) and injects them into
+the server process; secrets never touch disk, shell history, or Git.
+One-time setup: enable desktop-app CLI integration (or `op signin`) and
+create item `Patchwrit Fly` in vault `Private` with the Fly token in the
+`password` field. Production must use platform secrets (e.g. Fly
+secrets), not this file.
+
 ## Engineering rules
 Do not treat docs as implemented code. Phoenix coordinates and persists; Go executes isolated tasks. Treat Maven/plugins and user repositories as untrusted. Machine cleanup state must be separate from analysis status. Never commit tokens/secrets. Pin SHA/image digest for reproducibility. Keep PR changes isolated and tested.
 
