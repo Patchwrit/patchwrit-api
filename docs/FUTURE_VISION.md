@@ -95,6 +95,44 @@ reachability or exploitability claims, inappropriate dismissals,
 repeatability, latency, and cost per verdict. Persuasive prose is not
 quality unless it survives these checks.
 
+## Policy Officer
+
+Technical verdicts are not organizational decisions. A Policy Officer
+encodes an organization's own rules as deterministic policy that the
+tribunal is judged against, for example:
+
+- No critical findings in internet-facing production services.
+- Test-scope findings get a longer remediation window than
+  compile/runtime scope.
+- Accepted risks expire and must be re-approved, never permanent.
+- Certain ecosystems, licenses, or unmaintained dependencies are
+  disallowed regardless of known vulnerabilities.
+- Escalation paths differ by service criticality and data sensitivity.
+
+The nuances are the value: scope, exposure, criticality, deadlines,
+exceptions, and expiry. Models may explain how a case interacts with
+policy; Phoenix enforces policy. Policy itself is versioned, so a
+verdict can be traced to the rules in force when it was made.
+
+## Conversational interface
+
+A chatbot (Slack, Teams, GitHub, or web) is the natural front door to
+a case file. A developer should be able to ask "why is this urgent?",
+"show me how this dependency gets in", "what changed since last
+week?", or "I disagree — this module is being deleted" and receive
+answers grounded in the persisted dossier with cited evidence.
+
+The chatbot is an **interface, not a decision-maker**:
+
+- It reads cases, verdicts, history, and policy; it does not invent
+  evidence or override the policy gate.
+- Actions it offers (request rescan, record an override, appeal a
+  verdict, approve a verified PR) go through the same Phoenix APIs,
+  permissions, and audit trail as the web UI.
+- Every answer distinguishes tool-observed facts, model argument,
+  Judge recommendation, and enforced policy — the same separation as
+  the analysis page.
+
 ## Operating principle
 
 Models argue from evidence. Deterministic systems establish facts,

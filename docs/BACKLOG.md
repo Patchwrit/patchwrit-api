@@ -33,6 +33,8 @@
 - [ ] Human override/appeal records and case reopening on materially new evidence.
 - [ ] Auditor/Historian: case lifecycle and rescan deltas (new, still present, fixed, reintroduced, superseded).
 - [ ] Tribunal evaluation set: citation validity, unsupported-claim rate, repeatability, latency, and cost per verdict.
+- [ ] Policy Officer: versioned organizational policy (scope/exposure/criticality SLAs, expiring risk acceptances, escalation) enforced deterministically by Phoenix.
+- [ ] Conversational interface: chatbot over persisted cases/verdicts/history/policy with cited evidence; actions flow through the same APIs, permissions, and audit trail. Interface, not decision-maker.
 
 ## P1/P2 — Action and delivery
 - [ ] Controlled patch test within ephemeral VM.
