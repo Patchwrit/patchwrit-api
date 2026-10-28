@@ -29,5 +29,23 @@
 - [ ] Readme/setup/license/security review.
 - [ ] Three-minute reproducible demo and submission.
 
+## Independent Phase One review (2026-10-28) — post-phase backlog
+
+Worker review register: [worker PR #11](https://github.com/Patchwrit/patchwrit-worker/pull/11) (draft, docs-only).
+API review register: [API PR #27](https://github.com/Patchwrit/patchwrit-api/pull/27) (draft, docs-only).
+Nothing here blocks the tribunal demo on proven single-module repos; all items are tracked as worker issues:
+
+- [ ] Per-module reactor dependency graphs, contract v2 — [worker #12](https://github.com/Patchwrit/patchwrit-worker/issues/12)
+- [ ] Explicit incomplete-state instead of silent truncation — [worker #13](https://github.com/Patchwrit/patchwrit-worker/issues/13)
+- [ ] Git/Maven subprocess environment allowlist — [worker #14](https://github.com/Patchwrit/patchwrit-worker/issues/14)
+- [ ] CI test gate before image publishing — [worker #15](https://github.com/Patchwrit/patchwrit-worker/issues/15)
+- [ ] Callback retries + payload-size contract — [worker #16](https://github.com/Patchwrit/patchwrit-worker/issues/16)
+- [ ] Non-root worker / subprocess-tree isolation — [worker #17](https://github.com/Patchwrit/patchwrit-worker/issues/17)
+- [ ] Worker docs reconciliation — [worker #18](https://github.com/Patchwrit/patchwrit-worker/issues/18)
+
+Agreed rule from the review: a partial dependency graph caps tribunal
+verdicts at `needs_human_review` and blocks automated remediation
+(deterministic Phoenix policy, not a prompt instruction).
+
 ## Stretch
 Additional JDK versions; bytecode call graphs; deeper policy configuration; more ecosystems and private repositories.
