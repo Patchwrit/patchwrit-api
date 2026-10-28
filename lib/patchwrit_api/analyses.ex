@@ -58,6 +58,11 @@ defmodule PatchwritApi.Analyses do
     |> Repo.update()
   end
 
+  @doc "Merges stage instrumentation (durations/counts) into timings."
+  def merge_timings(%Analysis{} = analysis, values) do
+    update_analysis(analysis, %{"timings" => Map.merge(analysis.timings || %{}, values)})
+  end
+
   @doc """
   Moves an analysis along its lifecycle. Terminal states accept no
   further transitions, so a late callback can never resurrect one.

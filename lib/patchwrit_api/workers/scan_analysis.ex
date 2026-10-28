@@ -22,8 +22,15 @@ defmodule PatchwritApi.Workers.ScanAnalysis do
   end
 
   defp scan(analysis) do
+    started = System.monotonic_time(:millisecond)
+
     case Osv.scan_analysis(analysis) do
       {:ok, analysis} ->
+        Analyses.merge_timings(analysis, %{
+          "scan_ms" => System.monotonic_time(:millisecond) - started,
+          "findings" => PatchwritApi.Findings.count_findings_for_analysis(analysis.id)
+        })
+
         # Chain: fresh findings get Investigator evidence packets.
         PatchwritApi.Workers.InvestigateAnalysis.enqueue(analysis)
         :ok

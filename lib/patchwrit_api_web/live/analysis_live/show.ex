@@ -193,6 +193,54 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           </ul>
         </section>
 
+        <section
+          :if={@analysis.timings != %{} or (@analysis.result && @analysis.result["graph"])}
+          class="pw-result"
+        >
+          <div class="pw-result-head">
+            <div>
+              <span class="pw-panel-kicker">Instrumentation</span>
+              <h2>Stage timings</h2>
+            </div>
+            <p>Where wall-clock time went, per stage and per module.</p>
+          </div>
+          <dl class="pw-detail-grid">
+            <div :for={{key, value} <- Enum.sort(@analysis.timings)} class="pw-detail-item">
+              <dt>{key}</dt>
+              <dd class="pw-mono">{value}</dd>
+            </div>
+            <div
+              :if={@analysis.result && @analysis.result["graph"]}
+              class="pw-detail-item"
+            >
+              <dt>Artifacts downloaded</dt>
+              <dd class="pw-mono">
+                {@analysis.result["graph"]["downloaded_artifacts"]} files, {Float.round(
+                  (@analysis.result["graph"]["downloaded_bytes"] || 0) / 1_000_000,
+                  1
+                )} MB
+              </dd>
+            </div>
+          </dl>
+          <ul
+            :if={@analysis.result && @analysis.result["graph"]}
+            class="pw-analysis-list"
+          >
+            <li
+              :for={mod <- @analysis.result["graph"]["modules"] || []}
+              class="pw-analysis-row"
+            >
+              <span class="pw-mono">{mod["module"] || mod["pom_path"]}</span>
+              <div class="pw-meta">
+                <span>{mod["status"]}</span>
+                <span>{mod["duration_ms"]} ms</span>
+                <span>{mod["dependencies"]} dependencies</span>
+                <span>{mod["pom_path"]}</span>
+              </div>
+            </li>
+          </ul>
+        </section>
+
         <section :if={@analysis.result} class="pw-result">
           <div class="pw-result-head">
             <div>
