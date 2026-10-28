@@ -171,6 +171,12 @@ defmodule PatchwritApi.Fly.ClientTest do
     assert_received {:jdk_payload, payload}
     assert payload["config"]["image"] == "ghcr.io/patchwrit/patchwrit-worker@sha256:jdk17"
 
+    assert payload["config"]["guest"] == %{
+             "cpu_kind" => "performance",
+             "cpus" => 2,
+             "memory_mb" => 4096
+           }
+
     assert {:ok, "ghcr.io/patchwrit/patchwrit-worker@sha256:jdk17"} =
              Client.selected_worker_image("jdk17")
   end
