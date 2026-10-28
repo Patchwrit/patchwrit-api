@@ -20,8 +20,19 @@
 
 ## P1 — AI
 - [ ] Investigator's structured dependency provenance and source evidence.
+- [ ] Case grouping: group related findings (same package/version/advisory across modules) into tribunal case families before model spend. (See `docs/FUTURE_VISION.md`.)
 - [ ] Meta-powered Prosecutor/Defender/Judge reason over actual evidence, acknowledge uncertainty.
 - [ ] Remediator proposes evidence-backed update.
+
+## Future vision (post-tribunal)
+
+- [ ] Source Investigator: source-level usage/reachability evidence at the pinned SHA.
+- [ ] Librarian: deterministic advisory enrichment (exploit signals, fixed-version and upgrade-distance facts).
+- [ ] Context Keeper: human-supplied deployment, exposure, sensitivity, and criticality context per tracked repository.
+- [ ] Verifier: test proposed updates in an ephemeral environment and confirm the vulnerable version disappears.
+- [ ] Human override/appeal records and case reopening on materially new evidence.
+- [ ] Auditor/Historian: case lifecycle and rescan deltas (new, still present, fixed, reintroduced, superseded).
+- [ ] Tribunal evaluation set: citation validity, unsupported-claim rate, repeatability, latency, and cost per verdict.
 
 ## P1/P2 — Action and delivery
 - [ ] Controlled patch test within ephemeral VM.
