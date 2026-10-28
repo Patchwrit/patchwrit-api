@@ -33,7 +33,8 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
     dependencies = get_in(analysis.result || %{}, ["dependencies"]) || []
 
     Map.new(dependencies, fn dep ->
-      {"#{dep["group_id"]}:#{dep["artifact_id"]}:#{dep["version"]}", dep["introduced_via"] || []}
+      path = (dep["introduction_paths"] || []) |> List.first(dep["introduced_via"] || [])
+      {"#{dep["group_id"]}:#{dep["artifact_id"]}:#{dep["version"]}", path}
     end)
   end
 
@@ -128,6 +129,19 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
               <h2>Dependencies ({length(@analysis.result["dependencies"])})</h2>
             </div>
             <p>Effective graph from the pinned checkout. First 50 shown.</p>
+            <p :if={@analysis.result["graph"] && @analysis.result["graph"]["complete"]}>
+              Graph complete ({@analysis.result["graph"]["modules_resolved"]}/{@analysis.result[
+                "graph"
+              ]["modules_total"]} modules).
+            </p>
+            <p :if={@analysis.result["graph"] && !@analysis.result["graph"]["complete"]}>
+              Graph partial ({@analysis.result["graph"]["modules_resolved"]}/{@analysis.result[
+                "graph"
+              ]["modules_total"]} modules) — findings cover the observed subset only.
+            </p>
+            <p :if={!@analysis.result["graph"]}>
+              Legacy result — graph completeness unknown.
+            </p>
           </div>
           <ul class="pw-analysis-list">
             <li :for={dep <- Enum.take(@analysis.result["dependencies"], 50)} class="pw-analysis-row">
@@ -135,7 +149,8 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
               <div class="pw-meta">
                 <span>depth {dep["depth"]}</span>
                 <span :if={dep["scope"]}>scope {dep["scope"]}</span>
-                <span>via {dep["introduced_via"] |> List.last()}</span>
+                <span :if={dep["module"]}>module {dep["module"]}</span>
+                <span>via {(dep["introduction_paths"] || []) |> List.first([]) |> List.last()}</span>
               </div>
             </li>
           </ul>

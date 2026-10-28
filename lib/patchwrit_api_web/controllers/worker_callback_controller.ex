@@ -28,7 +28,7 @@ defmodule PatchwritApiWeb.WorkerCallbackController do
       analysis.status in ~w(completed failed cancelled) ->
         json(conn, %{status: "already_recorded"})
 
-      not valid_payload?(params) ->
+      not valid_payload?(params, id) ->
         render_error(conn, 422, "invalid worker payload")
 
       true ->
@@ -40,7 +40,7 @@ defmodule PatchwritApiWeb.WorkerCallbackController do
     result =
       Map.take(
         params,
-        ~w(schema_version job_id status worker_version environment repository dependencies timings_ms errors)
+        ~w(schema_version job_id status worker_version environment repository dependencies graph timings_ms errors)
       )
 
     attrs =
@@ -88,8 +88,11 @@ defmodule PatchwritApiWeb.WorkerCallbackController do
     end
   end
 
-  defp valid_payload?(params) do
-    params["schema_version"] == 1 and params["status"] in ~w(completed failed) and
+  # Schema v2 only, and the payload must belong to this route's job:
+  # a valid token with a mismatched job_id is a malformed callback.
+  defp valid_payload?(params, id) do
+    params["schema_version"] == 2 and params["job_id"] == id and
+      params["status"] in ~w(completed failed) and
       byte_size(Jason.encode!(params)) <= @max_payload_bytes
   end
 
