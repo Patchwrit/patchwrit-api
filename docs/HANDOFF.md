@@ -216,3 +216,26 @@ from untrusted POMs/build files — today the worker never runs repo
 builds or `mvnw` and Maven children get a scrubbed env, but this needs
 its own review pass before arbitrary-repo intake. Then tribunal agents.
 OSS license still pending.
+
+## Session log — 2026-10-28 (JDK 21 worker image)
+
+**Working:** worker PR #9 — `Dockerfile.jdk21` mirrors JDK 17 on
+`maven:3.9.11-eclipse-temurin-21@sha256:463a1849…`; GHCR matrix publishes
+`jdk21`. Phoenix needed no changes (image key + 1024 MB sizing already
+wired); digest configured as `WORKER_IMAGE_JDK21` (plain value in
+`.env.op`, not a secret).
+
+**Live proof:** `ryanmcmorrowsnyk/vulnerable-java-app` (`main`, JDK 21)
+analysis `16baf1ce-586f-47a8-bf7c-c0eeb58140f3`, Machine `843205c2d690e8`,
+image `ghcr.io/patchwrit/patchwrit-worker@sha256:eb01ff2b711098c373c7943fd7d3f05ab8fff8ed24a84c8bf19d2c7c6826f0aa`:
+worker reported OpenJDK 21.0.9, pinned SHA `df0cde2d…`, 248 dependencies
+(clone 636 ms / Maven 30134 ms / execution 32505 ms), auto-scan
+persisted **326 findings**; completed, cleanup `destroyed`, Fly app
+empty afterward. Note: OSV detail fetching is one request per hit, so
+a finding-dense repo's scan takes measurably longer (observed ~1 min) —
+a phase-one-end optimization candidate, not a correctness issue.
+
+**Next:** tribunal agents (Investigator → Prosecutor/Defender/Judge)
+over persisted findings. Deferred to phase-one end (owner direction):
+external review, UI improvements, scan-performance optimization,
+malicious-POM security review. OSS license still pending.
