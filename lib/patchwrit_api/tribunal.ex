@@ -11,6 +11,7 @@ defmodule PatchwritApi.Tribunal do
   alias PatchwritApi.Analyses.Analysis
   alias PatchwritApi.Repo
   alias PatchwritApi.Tribunal.Case
+  alias PatchwritApi.Tribunal.Opinion
 
   def list_cases_for_analysis(analysis_id) do
     Case
@@ -21,6 +22,28 @@ defmodule PatchwritApi.Tribunal do
 
   def count_cases_for_analysis(analysis_id) do
     Repo.aggregate(from(c in Case, where: c.analysis_id == ^analysis_id), :count)
+  end
+
+  def get_case(id), do: Repo.get(Case, id)
+
+  def update_case_status(%Case{} = case_record, status) do
+    case_record
+    |> Case.changeset(%{"status" => status})
+    |> Repo.update()
+  end
+
+  @doc "Persists one advocate opinion (completed or failed) for a case."
+  def create_opinion(attrs) do
+    %Opinion{}
+    |> Opinion.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  def list_opinions_for_case(tribunal_case_id) do
+    Opinion
+    |> where(tribunal_case_id: ^tribunal_case_id)
+    |> order_by(asc: :inserted_at)
+    |> Repo.all()
   end
 
   @doc "Replaces the analysis's cases with `case_attrs` in one transaction."

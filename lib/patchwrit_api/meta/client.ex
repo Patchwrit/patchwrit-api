@@ -75,6 +75,8 @@ defmodule PatchwritApi.Meta.Client do
     req =
       Req.new(
         base_url: Keyword.get(config(), :base_url, @default_base_url),
+        # Reasoning models regularly exceed Req's 15s default.
+        receive_timeout: Keyword.get(config(), :receive_timeout_ms, 120_000),
         headers: [
           {"authorization", "Bearer #{api_key}"},
           {"user-agent", "Patchwrit"}
