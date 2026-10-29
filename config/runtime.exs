@@ -38,6 +38,16 @@ if System.get_env("FLY_API_TOKEN") || System.get_env("FLY_APP_NAME") do
     }
 end
 
+# Meta Model API (tribunal). Phoenix-side only: the key is never sent
+# to a worker. Guarded so test/dev config is never clobbered when absent.
+if System.get_env("MODEL_API_KEY") do
+  config :patchwrit_api, :meta,
+    api_key: System.get_env("MODEL_API_KEY"),
+    base_url: System.get_env("META_MODEL_BASE_URL") || "https://api.meta.ai/v1",
+    advocate_model: System.get_env("META_ADVOCATE_MODEL") || "muse-spark-1.3",
+    judge_model: System.get_env("META_JUDGE_MODEL") || "muse-wonder-1.0"
+end
+
 # Public base URL workers use to call back (tunnel in dev, deployed app in prod).
 if base = System.get_env("CALLBACK_BASE_URL") do
   config :patchwrit_api, :callback_base_url, base
