@@ -115,6 +115,23 @@ defmodule PatchwritApi.Tribunal do
     |> Repo.preload(tribunal_case: [:finding, :analysis])
   end
 
+  @doc "Total measured model tokens across completed opinions and verdicts."
+  def total_tokens do
+    opinion_tokens =
+      Opinion
+      |> where(status: "completed")
+      |> Repo.all()
+      |> Enum.sum_by(&(&1.usage["total_tokens"] || 0))
+
+    verdict_tokens =
+      Verdict
+      |> where(status: "completed")
+      |> Repo.all()
+      |> Enum.sum_by(&(&1.usage["total_tokens"] || 0))
+
+    opinion_tokens + verdict_tokens
+  end
+
   @doc "How many latest completed verdicts were policy-capped."
   def policy_capped_count do
     Verdict

@@ -3,6 +3,52 @@ defmodule PatchwritApiWeb.AnalysisComponents do
 
   use Phoenix.Component
 
+  attr :active, :string, default: "docket"
+  attr :summary, :list, default: []
+
+  @doc """
+  App sidebar: brand, primary nav, optional live docket summary, and
+  the track-repository action. Rendered by every console page so the
+  product reads as one full-screen application.
+  """
+  def app_sidebar(assigns) do
+    ~H"""
+    <aside class="pw-sidebar">
+      <a href="/analyses" class="pw-sidebar-brand">
+        <span class="pw-mark">PW</span>
+        <span class="pw-brand-copy">
+          <strong>Patchwrit</strong>
+          <span>Analysis console</span>
+        </span>
+      </a>
+
+      <nav class="pw-sidebar-nav" aria-label="Primary">
+        <a
+          href="/analyses"
+          class={["pw-nav-item", @active == "docket" && "pw-nav-item--active"]}
+        >
+          Docket
+        </a>
+        <a href="/analyses#tracked-repositories-title" class="pw-nav-item">Repositories</a>
+        <a href="/analyses#recent-analyses-title" class="pw-nav-item">Analyses</a>
+        <span :if={@active == "analysis"} class="pw-nav-item pw-nav-item--active">
+          Analysis detail
+        </span>
+      </nav>
+
+      <div :if={@summary != []} class="pw-sidebar-summary">
+        <div :for={item <- @summary} class="pw-sidebar-stat">
+          <span>{item.label}</span>
+          <strong>{item.value}</strong>
+        </div>
+      </div>
+
+      <a href="/analyses#track-repository-title" class="pw-sidebar-cta">+ Track repository</a>
+      <p class="pw-sidebar-note">Ephemeral Fly workers<br />Evidence-first results</p>
+    </aside>
+    """
+  end
+
   attr :status, :string, required: true
 
   def status_badge(assigns) do

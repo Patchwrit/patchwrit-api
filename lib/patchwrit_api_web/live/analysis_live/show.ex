@@ -5,6 +5,8 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
 
   alias PatchwritApi.Analyses
   alias PatchwritApi.Findings
+  alias PatchwritApi.Repositories
+  alias PatchwritApi.Tribunal
   import PatchwritApiWeb.AnalysisComponents
 
   @impl true
@@ -15,7 +17,26 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
      socket
      |> assign(:analysis, analysis)
      |> assign(:findings, Findings.list_findings_for_analysis(analysis.id))
-     |> assign(:introduced_via, introduced_via_map(analysis))}
+     |> assign(:introduced_via, introduced_via_map(analysis))
+     |> assign(:sidebar_summary, [
+       %{
+         label: "Tracked",
+         value: Integer.to_string(length(Repositories.list_repositories()))
+       },
+       %{
+         label: "Need attention",
+         value: Integer.to_string(length(Tribunal.attention_queue(100)))
+       },
+       %{label: "Model tokens", value: format_number(Tribunal.total_tokens())}
+     ])}
+  end
+
+  defp format_number(number) do
+    number
+    |> Integer.to_string()
+    |> String.reverse()
+    |> String.replace(~r/(\d{3})(?=\d)/, "\\1,")
+    |> String.reverse()
   end
 
   defp via_label(introduced_via, finding) do
@@ -41,19 +62,10 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="pw-shell">
-      <header class="pw-masthead">
-        <.link navigate={~p"/analyses"} class="pw-brand">
-          <span class="pw-mark">PW</span>
-          <span class="pw-brand-copy">
-            <strong>Patchwrit</strong>
-            <span>Analysis console</span>
-          </span>
-        </.link>
-        <p class="pw-masthead-note">Ephemeral Fly workers<br />Evidence-first results</p>
-      </header>
+    <div class="pw-app">
+      <.app_sidebar active="analysis" summary={@sidebar_summary} />
 
-      <main>
+      <main class="pw-main">
         <.link navigate={~p"/analyses"} class="pw-back-link">← All analyses</.link>
         <h1 class="pw-detail-title">{@analysis.repository_url}</h1>
 

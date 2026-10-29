@@ -50,7 +50,8 @@ defmodule PatchwritApiWeb.AnalysisLiveTest do
     assert html =~ "No tracked repositories yet"
     assert html =~ "No analyses yet"
     assert html =~ "/patchwrit.css"
-    assert html =~ "pw-shell"
+    assert html =~ "pw-app"
+    assert html =~ "pw-sidebar"
   end
 
   test "entering a repository URL fetches branches on the spot", %{conn: conn} do
