@@ -56,6 +56,15 @@ defmodule PatchwritApi.Tribunal do
     |> Repo.one()
   end
 
+  @doc "Latest completed verdict for a case, if one exists."
+  def latest_completed_verdict(tribunal_case_id) do
+    Verdict
+    |> where(tribunal_case_id: ^tribunal_case_id, status: "completed")
+    |> order_by(desc: :inserted_at)
+    |> limit(1)
+    |> Repo.one()
+  end
+
   @doc "Persists one Judge verdict (completed or failed) for a case."
   def create_verdict(attrs) do
     %Verdict{}
