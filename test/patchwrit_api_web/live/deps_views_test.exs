@@ -52,11 +52,15 @@ defmodule PatchwritApiWeb.DepsViewsTest do
     assert html =~ "org.hub:hub:2.0"
 
     view
-    |> element("button[phx-click='set_deps_view'][phx-value-view='direct']")
+    |> element("button[phx-click='toggle_direct_only']")
     |> render_click()
 
     assert has_element?(view, ".pw-table td", "org.lib:lib:1.0")
     refute has_element?(view, ".pw-table td", "org.hub:hub:2.0")
+
+    view
+    |> element("button[phx-click='toggle_direct_only']")
+    |> render_click()
 
     view
     |> element("button[phx-click='set_deps_view'][phx-value-view='all']")

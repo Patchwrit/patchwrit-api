@@ -23,6 +23,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
      |> assign(:dep_modules, dep_modules)
      |> assign(:deps_module, List.first(dep_modules))
      |> assign(:deps_view, "impact")
+     |> assign(:deps_direct_only, false)
      |> assign(:deps_query, "")
      |> assign(:deps_limit, 25)
      |> assign(
@@ -34,8 +35,12 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
 
   @impl true
   def handle_event("set_deps_view", %{"view" => view}, socket)
-      when view in ~w(impact direct all tree) do
+      when view in ~w(impact all tree) do
     {:noreply, assign(socket, deps_view: view, deps_limit: 25)}
+  end
+
+  def handle_event("toggle_direct_only", _params, socket) do
+    {:noreply, assign(socket, deps_direct_only: !socket.assigns.deps_direct_only, deps_limit: 25)}
   end
 
   def handle_event("deps_search", %{"query" => query}, socket) do
@@ -51,24 +56,21 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
   end
 
   # Rows for the table views, after view selection and search filtering.
-  # Each view must mean something distinct: Impact ranks hubs (module
-  # roots excluded — the project itself is not a dependency), Direct is
-  # the human-chosen set A-Z, All is the full inventory A-Z.
+  # Impact ranks hubs (module roots excluded — the project itself is
+  # not a dependency); All is the full inventory A-Z. "Direct only" is
+  # a filter over either, not a view of its own.
   defp visible_dep_rows(assigns) do
     rows =
       case assigns.deps_view do
-        "impact" ->
-          Enum.filter(assigns.dep_rows, &(&1.min_depth >= 1))
-
-        "direct" ->
-          assigns.dep_rows |> Enum.filter(& &1.direct) |> Enum.sort_by(& &1.coordinate)
-
-        "all" ->
-          Enum.sort_by(assigns.dep_rows, & &1.coordinate)
-
-        _ ->
-          assigns.dep_rows
+        "impact" -> Enum.filter(assigns.dep_rows, &(&1.min_depth >= 1))
+        "all" -> Enum.sort_by(assigns.dep_rows, & &1.coordinate)
+        _ -> assigns.dep_rows
       end
+
+    rows =
+      if assigns.deps_direct_only,
+        do: Enum.filter(rows, & &1.direct),
+        else: rows
 
     query = String.downcase(String.trim(assigns.deps_query))
 
@@ -277,7 +279,6 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
                 :for={
                   {view, label} <- [
                     {"impact", "Impact"},
-                    {"direct", "Direct"},
                     {"all", "All"},
                     {"tree", "Tree"}
                   ]
@@ -290,6 +291,15 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
                 {label}
               </button>
             </div>
+            <button
+              :if={@deps_view != "tree"}
+              type="button"
+              class={["pw-tab", @deps_direct_only && "pw-tab--active"]}
+              phx-click="toggle_direct_only"
+              aria-pressed={@deps_direct_only}
+            >
+              Direct only
+            </button>
             <form phx-change="deps_search" class="pw-deps-search">
               <input
                 type="text"
@@ -306,8 +316,6 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
               <% "impact" -> %>
                 Hubs first: ranked by how many modules use a dependency and how many
                 introduction paths reach it. The project itself is excluded.
-              <% "direct" -> %>
-                Dependencies declared directly in a POM — the human-chosen set, A–Z.
               <% "all" -> %>
                 Every unique dependency in the resolved graph, A–Z. Search narrows it.
               <% "tree" -> %>
