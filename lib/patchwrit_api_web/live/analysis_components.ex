@@ -51,7 +51,11 @@ defmodule PatchwritApiWeb.AnalysisComponents do
           <.nav_icon name="repositories" />
           <span class="pw-nav-label">Repositories</span>
         </a>
-        <a href="/analyses#recent-analyses-title" title="Analyses" class="pw-nav-item">
+        <a
+          href="/runs"
+          title="Analyses"
+          class={["pw-nav-item", @active == "analyses" && "pw-nav-item--active"]}
+        >
           <.nav_icon name="analyses" />
           <span class="pw-nav-label">Analyses</span>
         </a>
