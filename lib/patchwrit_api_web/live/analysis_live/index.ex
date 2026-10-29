@@ -323,7 +323,9 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
 
           <ul :if={@repositories != []} class="pw-analysis-list">
             <li :for={repository <- @repositories} class="pw-analysis-row">
-              <span class="pw-repo-link">{Repository.display_name(repository)}</span>
+              <.link navigate={~p"/repositories/#{repository.id}"} class="pw-repo-link">
+                {Repository.display_name(repository)}
+              </.link>
               <div class="pw-meta">
                 <span>branch: <span class="pw-mono">{repository.default_ref}</span></span>
                 <span>JDK {repository.java_version}</span>

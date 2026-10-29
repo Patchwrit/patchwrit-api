@@ -840,6 +840,17 @@ body.patchwrit .pw-track-cta:hover {
   margin-top: 32px;
 }
 
+.pw-repo-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.pw-repo-actions-row .pw-run-button {
+  margin-top: 0;
+}
+
 /* -- Repositories table ------------------------------------------------ */
 
 .pw-table-wrap {
