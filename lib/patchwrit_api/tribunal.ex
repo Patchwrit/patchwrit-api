@@ -12,6 +12,7 @@ defmodule PatchwritApi.Tribunal do
   alias PatchwritApi.Repo
   alias PatchwritApi.Tribunal.Case
   alias PatchwritApi.Tribunal.Opinion
+  alias PatchwritApi.Tribunal.Verdict
 
   def list_cases_for_analysis(analysis_id) do
     Case
@@ -41,6 +42,29 @@ defmodule PatchwritApi.Tribunal do
 
   def list_opinions_for_case(tribunal_case_id) do
     Opinion
+    |> where(tribunal_case_id: ^tribunal_case_id)
+    |> order_by(asc: :inserted_at)
+    |> Repo.all()
+  end
+
+  @doc "Latest completed opinion for a case + role, if one exists."
+  def latest_completed_opinion(tribunal_case_id, role) do
+    Opinion
+    |> where(tribunal_case_id: ^tribunal_case_id, role: ^role, status: "completed")
+    |> order_by(desc: :inserted_at)
+    |> limit(1)
+    |> Repo.one()
+  end
+
+  @doc "Persists one Judge verdict (completed or failed) for a case."
+  def create_verdict(attrs) do
+    %Verdict{}
+    |> Verdict.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  def list_verdicts_for_case(tribunal_case_id) do
+    Verdict
     |> where(tribunal_case_id: ^tribunal_case_id)
     |> order_by(asc: :inserted_at)
     |> Repo.all()
