@@ -42,6 +42,7 @@ defmodule PatchwritApiWeb.Router do
     live "/analyses", AnalysisLive.Index
     live "/analyses/:id", AnalysisLive.Show
     live "/repositories", RepositoryLive.Index
+    live "/repositories/:id", RepositoryLive.Show
   end
 
   # Other scopes may use custom stacks.
