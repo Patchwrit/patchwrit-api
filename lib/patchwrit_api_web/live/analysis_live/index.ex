@@ -41,18 +41,11 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
     repositories = Repositories.list_repositories()
     analyses = Analyses.list_analyses()
 
-    attention = Tribunal.attention_queue(10)
-
     socket
     |> assign(:repositories, repositories)
     |> assign(:analyses, analyses)
     |> assign(:stats, dashboard_stats(analyses))
-    |> assign(:attention, attention)
-    |> assign(:sidebar_summary, [
-      %{label: "Tracked", value: Integer.to_string(length(repositories))},
-      %{label: "Need attention", value: Integer.to_string(length(attention))},
-      %{label: "Model tokens", value: format_number(Tribunal.total_tokens())}
-    ])
+    |> assign(:attention, Tribunal.attention_queue(10))
     |> assign(:postures, repo_postures(repositories, analyses))
     |> assign(:summaries, analysis_summaries(analyses))
   end
@@ -297,14 +290,6 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
     if String.length(text) > 220, do: String.slice(text, 0, 220) <> "…", else: text
   end
 
-  defp format_number(number) do
-    number
-    |> Integer.to_string()
-    |> String.reverse()
-    |> String.replace(~r/(\d{3})(?=\d)/, "\\1,")
-    |> String.reverse()
-  end
-
   defp repo_short_name(repository_url) do
     repository_url
     |> String.trim_trailing("/")
@@ -380,14 +365,17 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
   def render(assigns) do
     ~H"""
     <div class="pw-app">
-      <.app_sidebar active="docket" summary={@sidebar_summary} />
+      <.app_sidebar active="docket" />
 
       <main class="pw-main">
         <div class="pw-docket-head">
-          <h1>Your security docket</h1>
-          <p>
-            What needs your attention across tracked repositories—tribunal verdicts first, evidence one click away.
-          </p>
+          <div>
+            <h1>Your security docket</h1>
+            <p>
+              What needs your attention across tracked repositories—tribunal verdicts first, evidence one click away.
+            </p>
+          </div>
+          <a href="#track-repository-title" class="pw-track-cta">+ Track repository</a>
         </div>
 
         <section class="pw-stat-strip" aria-label="Attention summary">

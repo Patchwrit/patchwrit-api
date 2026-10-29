@@ -4,12 +4,11 @@ defmodule PatchwritApiWeb.AnalysisComponents do
   use Phoenix.Component
 
   attr :active, :string, default: "docket"
-  attr :summary, :list, default: []
 
   @doc """
-  App sidebar: brand, primary nav, optional live docket summary, and
-  the track-repository action. Rendered by every console page so the
-  product reads as one full-screen application.
+  App sidebar: brand and primary nav only. Rendered by every console
+  page so the product reads as one full-screen application. Page
+  content (stats, actions) belongs in the page, never in the menu.
   """
   def app_sidebar(assigns) do
     ~H"""
@@ -35,16 +34,6 @@ defmodule PatchwritApiWeb.AnalysisComponents do
           Analysis detail
         </span>
       </nav>
-
-      <div :if={@summary != []} class="pw-sidebar-summary">
-        <div :for={item <- @summary} class="pw-sidebar-stat">
-          <span>{item.label}</span>
-          <strong>{item.value}</strong>
-        </div>
-      </div>
-
-      <a href="/analyses#track-repository-title" class="pw-sidebar-cta">+ Track repository</a>
-      <p class="pw-sidebar-note">Ephemeral Fly workers<br />Evidence-first results</p>
     </aside>
     """
   end

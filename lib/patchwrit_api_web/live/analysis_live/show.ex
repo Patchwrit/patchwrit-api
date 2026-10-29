@@ -5,8 +5,6 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
 
   alias PatchwritApi.Analyses
   alias PatchwritApi.Findings
-  alias PatchwritApi.Repositories
-  alias PatchwritApi.Tribunal
   import PatchwritApiWeb.AnalysisComponents
 
   @impl true
@@ -17,26 +15,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
      socket
      |> assign(:analysis, analysis)
      |> assign(:findings, Findings.list_findings_for_analysis(analysis.id))
-     |> assign(:introduced_via, introduced_via_map(analysis))
-     |> assign(:sidebar_summary, [
-       %{
-         label: "Tracked",
-         value: Integer.to_string(length(Repositories.list_repositories()))
-       },
-       %{
-         label: "Need attention",
-         value: Integer.to_string(length(Tribunal.attention_queue(100)))
-       },
-       %{label: "Model tokens", value: format_number(Tribunal.total_tokens())}
-     ])}
-  end
-
-  defp format_number(number) do
-    number
-    |> Integer.to_string()
-    |> String.reverse()
-    |> String.replace(~r/(\d{3})(?=\d)/, "\\1,")
-    |> String.reverse()
+     |> assign(:introduced_via, introduced_via_map(analysis))}
   end
 
   defp via_label(introduced_via, finding) do
@@ -63,7 +42,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
   def render(assigns) do
     ~H"""
     <div class="pw-app">
-      <.app_sidebar active="analysis" summary={@sidebar_summary} />
+      <.app_sidebar active="analysis" />
 
       <main class="pw-main">
         <.link navigate={~p"/analyses"} class="pw-back-link">← All analyses</.link>
