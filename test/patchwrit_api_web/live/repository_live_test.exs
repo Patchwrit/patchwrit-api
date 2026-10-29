@@ -120,7 +120,7 @@ defmodule PatchwritApiWeb.RepositoryLiveTest do
     {:ok, _view, html} = live(conn, "/repositories")
 
     assert html =~ "Tracked repositories"
-    assert html =~ "Worst verdict"
+    assert html =~ "Top recommendation"
     # Stored display name, not the raw URL; name links to the analysis.
     assert html =~ "example/app"
     refute html =~ ">View<"

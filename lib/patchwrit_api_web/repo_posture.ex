@@ -31,6 +31,8 @@ defmodule PatchwritApiWeb.RepoPosture do
              findings: 0,
              attention: 0,
              worst: nil,
+             judged: 0,
+             cases: 0,
              coverage: "Not yet evaluated",
              evaluated: nil
            }}
@@ -47,6 +49,8 @@ defmodule PatchwritApiWeb.RepoPosture do
              findings: Findings.count_findings_for_analysis(latest.id),
              attention: Enum.count(verdicts, &(&1.recommendation in @attention_recommendations)),
              worst: worst_recommendation(verdicts),
+             judged: length(verdicts),
+             cases: Tribunal.count_cases_for_analysis(latest.id),
              coverage: graph_label(latest),
              evaluated: evaluated_label(latest)
            }}

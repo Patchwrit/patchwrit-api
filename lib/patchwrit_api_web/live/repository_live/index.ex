@@ -189,7 +189,7 @@ defmodule PatchwritApiWeb.RepositoryLive.Index do
               <thead>
                 <tr>
                   <th>Repository</th>
-                  <th>Worst verdict</th>
+                  <th>Top recommendation</th>
                   <th>Attention</th>
                   <th>Findings</th>
                   <th>Coverage</th>
@@ -218,8 +218,13 @@ defmodule PatchwritApiWeb.RepositoryLive.Index do
                       </span>
                     </div>
                   </td>
-                  <td data-label="Worst verdict">
+                  <td data-label="Top recommendation">
                     <.verdict_badge :if={posture.worst} recommendation={posture.worst} />
+                    <div :if={posture.worst} class="pw-repo-sub">
+                      from {posture.judged} judged {if posture.judged == 1,
+                        do: "case",
+                        else: "cases"}
+                    </div>
                     <span :if={!posture.worst && clean_scan?(posture)} class="pw-clean-note">
                       Clean scan
                     </span>
