@@ -60,6 +60,11 @@ defmodule PatchwritApiWeb.RepositoryLive.Index do
   end
 
   def handle_event("save_repository", %{"repository" => params}, socket) do
+    params =
+      if name = socket.assigns[:fetched_repo_name],
+        do: Map.put(params, "name", name),
+        else: params
+
     case Repositories.create_repository(params) do
       {:ok, _repository} ->
         {:noreply,
@@ -111,7 +116,7 @@ defmodule PatchwritApiWeb.RepositoryLive.Index do
 
       true ->
         case GitHub.repository_branches(repository_url) do
-          {:ok, %{default_branch: default_branch, branches: branches}} ->
+          {:ok, %{default_branch: default_branch, branches: branches} = fetched} ->
             params =
               if params["default_ref"] in [nil, "", "HEAD"] or
                    socket.assigns.branches_for_url != repository_url do
@@ -125,6 +130,7 @@ defmodule PatchwritApiWeb.RepositoryLive.Index do
              |> assign(:branch_options, Enum.map(branches, & &1.name))
              |> assign(:branches_for_url, repository_url)
              |> assign(:branch_state, :loaded)
+             |> assign(:fetched_repo_name, fetched.name)
              |> assign(:branch_error, nil)}
 
           {:error, message} ->
@@ -183,45 +189,34 @@ defmodule PatchwritApiWeb.RepositoryLive.Index do
               <thead>
                 <tr>
                   <th>Repository</th>
-                  <th>Branch</th>
-                  <th>JDK</th>
-                  <th>Latest run</th>
-                  <th>Findings</th>
-                  <th>Attention</th>
-                  <th>Coverage</th>
                   <th>Worst verdict</th>
-                  <th>Evaluated</th>
+                  <th>Attention</th>
+                  <th>Findings</th>
+                  <th>Coverage</th>
+                  <th>Latest run</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 <tr :for={{repository, posture} <- @rows}>
                   <td data-label="Repository">
-                    <span class="pw-repo-link">{repository.repository_url}</span>
-                  </td>
-                  <td data-label="Branch"><span class="pw-mono">{repository.default_ref}</span></td>
-                  <td data-label="JDK">{repository.java_version}</td>
-                  <td data-label="Latest run">
-                    <%= if posture.latest do %>
-                      <.status_badge status={posture.latest.status} />
-                    <% else %>
-                      <span class="pw-muted">No runs yet</span>
-                    <% end %>
-                  </td>
-                  <td data-label="Findings">
-                    <span :if={posture.latest}>{posture.findings}</span>
-                    <span :if={!posture.latest} class="pw-muted">—</span>
-                  </td>
-                  <td data-label="Attention">
-                    <span :if={posture.latest && posture.attention > 0} class="pw-attention-count">
-                      {posture.attention}
+                    <.link
+                      :if={posture.latest}
+                      navigate={~p"/analyses/#{posture.latest.id}"}
+                      class="pw-repo-link"
+                    >
+                      {Repository.display_name(repository)}
+                    </.link>
+                    <span :if={!posture.latest} class="pw-repo-link">
+                      {Repository.display_name(repository)}
                     </span>
-                    <span :if={posture.latest && posture.attention == 0} class="pw-muted">0</span>
-                    <span :if={!posture.latest} class="pw-muted">—</span>
-                  </td>
-                  <td data-label="Coverage">
-                    <span :if={posture.latest}>{posture.coverage}</span>
-                    <span :if={!posture.latest} class="pw-muted">Not yet evaluated</span>
+                    <div class="pw-repo-sub">
+                      {repository.default_ref} · JDK {repository.java_version}<span :if={
+                        posture.latest && posture.latest.resolved_sha
+                      }>
+                        · {String.slice(posture.latest.resolved_sha, 0, 7)}
+                      </span>
+                    </div>
                   </td>
                   <td data-label="Worst verdict">
                     <.verdict_badge :if={posture.worst} recommendation={posture.worst} />
@@ -232,29 +227,39 @@ defmodule PatchwritApiWeb.RepositoryLive.Index do
                       Not judged
                     </span>
                   </td>
-                  <td data-label="Evaluated">
-                    <span :if={posture.latest}>{posture.evaluated}</span>
+                  <td data-label="Attention">
+                    <span :if={posture.latest && posture.attention > 0} class="pw-attention-count">
+                      {posture.attention}
+                    </span>
+                    <span :if={posture.latest && posture.attention == 0} class="pw-muted">0</span>
                     <span :if={!posture.latest} class="pw-muted">—</span>
                   </td>
+                  <td data-label="Findings">
+                    <span :if={posture.latest}>{posture.findings}</span>
+                    <span :if={!posture.latest} class="pw-muted">—</span>
+                  </td>
+                  <td data-label="Coverage">
+                    <span :if={posture.latest}>{posture.coverage}</span>
+                    <span :if={!posture.latest} class="pw-muted">Not yet evaluated</span>
+                  </td>
+                  <td data-label="Latest run">
+                    <%= if posture.latest do %>
+                      <.status_badge status={posture.latest.status} />
+                      <div class="pw-repo-sub">{posture.evaluated}</div>
+                    <% else %>
+                      <span class="pw-muted">No runs yet</span>
+                    <% end %>
+                  </td>
                   <td data-label="Actions">
-                    <div class="pw-row-actions">
-                      <.link
-                        :if={posture.latest}
-                        navigate={~p"/analyses/#{posture.latest.id}"}
-                        class="pw-view-link"
-                      >
-                        View
-                      </.link>
-                      <button
-                        id={"run-repository-#{repository.id}"}
-                        type="button"
-                        class="pw-run-button"
-                        phx-click="run_repository"
-                        phx-value-id={repository.id}
-                      >
-                        Run analysis
-                      </button>
-                    </div>
+                    <button
+                      id={"run-repository-#{repository.id}"}
+                      type="button"
+                      class="pw-run-button"
+                      phx-click="run_repository"
+                      phx-value-id={repository.id}
+                    >
+                      Run analysis
+                    </button>
                   </td>
                 </tr>
               </tbody>

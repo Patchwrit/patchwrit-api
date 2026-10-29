@@ -121,7 +121,9 @@ defmodule PatchwritApiWeb.RepositoryLiveTest do
 
     assert html =~ "Tracked repositories"
     assert html =~ "Worst verdict"
-    assert html =~ "https://github.com/example/app"
+    # Stored display name, not the raw URL; name links to the analysis.
+    assert html =~ "example/app"
+    refute html =~ ">View<"
     assert html =~ "Needs human review"
     assert html =~ "Graph completeness unknown"
     assert html =~ "pw-attention-count"
@@ -145,7 +147,7 @@ defmodule PatchwritApiWeb.RepositoryLiveTest do
     |> render_submit()
 
     html = render(view)
-    assert html =~ @repo
+    assert html =~ "spring-petclinic/spring-framework-petclinic"
     assert Repositories.list_repositories() |> length() == 1
   end
 end

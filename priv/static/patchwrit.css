@@ -837,22 +837,16 @@ body.patchwrit .pw-track-cta:hover {
   font-weight: 800;
 }
 
-.pw-row-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
+.pw-repo-sub {
+  margin-top: 5px;
+  color: var(--pw-muted);
+  font-family: var(--pw-mono);
+  font-size: 12px;
 }
 
-.pw-row-actions .pw-run-button {
+.pw-table .pw-run-button {
   margin-top: 0;
-}
-
-body.patchwrit .pw-view-link {
-  font-weight: 800;
-  text-decoration-color: var(--pw-accent);
-  text-decoration-thickness: 2px;
-  text-underline-offset: 3px;
+  white-space: nowrap;
 }
 
 @media (max-width: 900px) {

@@ -64,6 +64,11 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
   end
 
   def handle_event("save_repository", %{"repository" => params}, socket) do
+    params =
+      if name = socket.assigns[:fetched_repo_name],
+        do: Map.put(params, "name", name),
+        else: params
+
     case Repositories.create_repository(params) do
       {:ok, _repository} ->
         {:noreply,
@@ -115,7 +120,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
 
       true ->
         case GitHub.repository_branches(repository_url) do
-          {:ok, %{default_branch: default_branch, branches: branches}} ->
+          {:ok, %{default_branch: default_branch, branches: branches} = fetched} ->
             params =
               if params["default_ref"] in [nil, "", "HEAD"] or
                    socket.assigns.branches_for_url != repository_url do
@@ -129,6 +134,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
              |> assign(:branch_options, Enum.map(branches, & &1.name))
              |> assign(:branches_for_url, repository_url)
              |> assign(:branch_state, :loaded)
+             |> assign(:fetched_repo_name, fetched.name)
              |> assign(:branch_error, nil)}
 
           {:error, message} ->
@@ -317,7 +323,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
 
           <ul :if={@repositories != []} class="pw-analysis-list">
             <li :for={repository <- @repositories} class="pw-analysis-row">
-              <span class="pw-repo-link">{repository.repository_url}</span>
+              <span class="pw-repo-link">{Repository.display_name(repository)}</span>
               <div class="pw-meta">
                 <span>branch: <span class="pw-mono">{repository.default_ref}</span></span>
                 <span>JDK {repository.java_version}</span>
