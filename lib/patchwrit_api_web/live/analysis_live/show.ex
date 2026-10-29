@@ -321,6 +321,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
               <% "impact" -> %>
                 Hubs first: ranked by module spread, then downstream reach (how much of
                 the graph sits beneath a dependency), then introduction-path fan-in.
+                Depth counts edges from the project: 1 = declared directly in a POM.
               <% "all" -> %>
                 Every unique dependency in the resolved graph, A–Z. Search narrows it.
               <% "tree" -> %>
