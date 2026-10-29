@@ -79,6 +79,68 @@ defmodule PatchwritApi.Tribunal do
     |> Repo.all()
   end
 
+  @doc "Latest completed verdict per case for one analysis, as `%{case_id => verdict}`."
+  def latest_verdicts_for_analysis(analysis_id) do
+    Verdict
+    |> join(:inner, [v], c in Case, on: v.tribunal_case_id == c.id)
+    |> where([v, c], c.analysis_id == ^analysis_id and v.status == "completed")
+    |> order_by([v], desc: v.inserted_at)
+    |> Repo.all()
+    |> Enum.uniq_by(& &1.tribunal_case_id)
+    |> Map.new(&{&1.tribunal_case_id, &1})
+  end
+
+  @attention_recommendations ~w(remediate_now needs_human_review investigate_usage)
+  @priority_rank %{"critical" => 0, "high" => 1, "medium" => 2, "low" => 3, "unknown" => 4}
+
+  @doc """
+  Cases needing attention across all analyses: the latest completed
+  verdict per case whose (policy-gated) recommendation is actionable,
+  worst first — remediate now, policy-capped human review, other human
+  review, then investigate usage; priority breaks ties inside groups.
+  Verdicts come back with `tribunal_case` (plus finding and analysis)
+  preloaded.
+  """
+  def attention_queue(limit \\ 20) do
+    Verdict
+    |> where(status: "completed")
+    |> order_by(desc: :inserted_at)
+    |> Repo.all()
+    |> Enum.uniq_by(& &1.tribunal_case_id)
+    |> Enum.filter(&(&1.recommendation in @attention_recommendations))
+    |> Enum.sort_by(fn verdict ->
+      {attention_rank(verdict), Map.get(@priority_rank, verdict.priority, 4)}
+    end)
+    |> Enum.take(limit)
+    |> Repo.preload(tribunal_case: [:finding, :analysis])
+  end
+
+  @doc "How many latest completed verdicts were policy-capped."
+  def policy_capped_count do
+    Verdict
+    |> where(status: "completed")
+    |> order_by(desc: :inserted_at)
+    |> Repo.all()
+    |> Enum.uniq_by(& &1.tribunal_case_id)
+    |> Enum.count(& &1.policy_capped)
+  end
+
+  @doc "Counts of latest completed verdicts per final recommendation."
+  def verdict_recommendation_counts do
+    Verdict
+    |> where(status: "completed")
+    |> order_by(desc: :inserted_at)
+    |> Repo.all()
+    |> Enum.uniq_by(& &1.tribunal_case_id)
+    |> Enum.frequencies_by(& &1.recommendation)
+  end
+
+  defp attention_rank(%Verdict{recommendation: "remediate_now"}), do: 0
+  defp attention_rank(%Verdict{recommendation: "needs_human_review", policy_capped: true}), do: 1
+  defp attention_rank(%Verdict{recommendation: "needs_human_review"}), do: 2
+  defp attention_rank(%Verdict{recommendation: "investigate_usage"}), do: 3
+  defp attention_rank(_verdict), do: 4
+
   @doc "Replaces the analysis's cases with `case_attrs` in one transaction."
   def replace_cases(%Analysis{} = analysis, case_attrs) do
     Repo.transaction(fn ->
