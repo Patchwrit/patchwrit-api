@@ -184,7 +184,7 @@ body.patchwrit .pw-nav-item--active {
   color: #fff;
 }
 
-.pw-track-cta {
+body.patchwrit .pw-track-cta {
   flex: 0 0 auto;
   padding: 12px 16px;
   background: var(--pw-accent);
@@ -195,8 +195,9 @@ body.patchwrit .pw-nav-item--active {
   text-decoration: none;
 }
 
-.pw-track-cta:hover {
+body.patchwrit .pw-track-cta:hover {
   background: var(--pw-accent-hover);
+  color: #fff;
 }
 
 .pw-main {
