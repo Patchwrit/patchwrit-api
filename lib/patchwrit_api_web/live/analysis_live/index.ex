@@ -355,7 +355,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
           label="Java version"
           options={["JDK 17": "17", "JDK 21": "21"]}
         />
-        <button type="submit" class="pw-submit">Track repository</button>
+        <button type="submit" class="pw-submit">Track Repository</button>
       </.form>
     </section>
     """
@@ -375,7 +375,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
               What needs your attention across tracked repositories—tribunal verdicts first, evidence one click away.
             </p>
           </div>
-          <a href="#track-repository-title" class="pw-track-cta">+ Track repository</a>
+          <a href="#track-repository-title" class="pw-track-cta">+ Track Repository</a>
         </div>
 
         <section class="pw-stat-strip" aria-label="Attention summary">
