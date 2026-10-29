@@ -63,6 +63,9 @@ defmodule PatchwritApi.Analyses.DependencyGraphTest do
 
     lib = Enum.find(rows, &(&1.coordinate == "org.lib:lib:1.0"))
     assert lib.direct == true
+    # Downstream reach: lib carries hub + leaf; hub carries leaf only.
+    assert lib.downstream == 2
+    assert hub.downstream == 1
   end
 
   test "tree rebuilds introduction chains per module" do

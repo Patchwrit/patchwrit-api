@@ -17,6 +17,14 @@ defmodule PatchwritApi.Analyses.DependencyGraph do
   then path fan-in, then shallowest depth, then coordinate.
   """
   def aggregate(dependencies) when is_list(dependencies) do
+    all_paths =
+      dependencies
+      |> Enum.flat_map(&introduction_paths/1)
+      |> Enum.reject(&(&1 == []))
+      |> Enum.uniq()
+
+    downstream = downstream_counts(all_paths)
+
     dependencies
     |> Enum.group_by(&coordinate/1)
     |> Enum.map(fn {coordinate, entries} ->
@@ -38,6 +46,7 @@ defmodule PatchwritApi.Analyses.DependencyGraph do
           entries |> Enum.map(& &1["module"]) |> Enum.reject(&is_nil/1) |> Enum.uniq() |> length(),
         paths: paths,
         path_count: length(paths),
+        downstream: Map.get(downstream, coordinate, 0),
         min_depth: entries |> Enum.map(&(&1["depth"] || 99)) |> Enum.min(),
         scopes: entries |> Enum.map(& &1["scope"]) |> Enum.reject(&is_nil/1) |> Enum.uniq(),
         direct: Enum.any?(entries, &(&1["depth"] == 1)),
@@ -45,8 +54,22 @@ defmodule PatchwritApi.Analyses.DependencyGraph do
       }
     end)
     |> Enum.sort_by(fn row ->
-      {-row.module_count, -row.path_count, row.min_depth, row.coordinate}
+      {-row.module_count, -row.downstream, -row.path_count, row.min_depth, row.coordinate}
     end)
+  end
+
+  # For every coordinate, how many distinct coordinates sit beneath it
+  # across all introduction paths — its observed downstream reach.
+  defp downstream_counts(paths) do
+    Enum.reduce(paths, %{}, fn path, acc ->
+      path
+      |> Enum.with_index()
+      |> Enum.reduce(acc, fn {coordinate, index}, inner ->
+        below = Enum.drop(path, index + 1)
+        Map.update(inner, coordinate, MapSet.new(below), &MapSet.union(&1, MapSet.new(below)))
+      end)
+    end)
+    |> Map.new(fn {coordinate, set} -> {coordinate, MapSet.size(set)} end)
   end
 
   @doc "Coordinates (`group:artifact:version`) for raw dependency entries."

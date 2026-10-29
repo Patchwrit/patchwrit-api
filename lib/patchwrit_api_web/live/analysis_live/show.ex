@@ -115,6 +115,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
             <th>Dependency</th>
             <th>Modules</th>
             <th>Paths</th>
+            <th>Downstream</th>
             <th>Depth</th>
             <th>Scopes</th>
           </tr>
@@ -134,8 +135,12 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
               </span>
               <span :if={row.direct} class="pw-badge pw-verdict--investigate">Direct</span>
             </td>
-            <td data-label="Modules">{row.module_count}</td>
+            <td data-label="Modules">
+              <span :if={row.module_count > 0}>{row.module_count}</span>
+              <span :if={row.module_count == 0} class="pw-muted">—</span>
+            </td>
             <td data-label="Paths">{row.path_count}</td>
+            <td data-label="Downstream">{row.downstream}</td>
             <td data-label="Depth">{row.min_depth}</td>
             <td data-label="Scopes">{Enum.join(row.scopes, ", ")}</td>
           </tr>
@@ -314,8 +319,8 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           <p class="pw-view-note">
             <%= case @deps_view do %>
               <% "impact" -> %>
-                Hubs first: ranked by how many modules use a dependency and how many
-                introduction paths reach it. The project itself is excluded.
+                Hubs first: ranked by module spread, then downstream reach (how much of
+                the graph sits beneath a dependency), then introduction-path fan-in.
               <% "all" -> %>
                 Every unique dependency in the resolved graph, A–Z. Search narrows it.
               <% "tree" -> %>
