@@ -22,7 +22,8 @@ defmodule PatchwritApi.Tribunal.Investigator do
     [group_id, artifact_id] = split_package_name(finding.package_name)
 
     %{
-      "schema_version" => 1,
+      "schema_version" => 2,
+      "dossier_version" => 2,
       "source" => %{
         "repository_url" => analysis.repository_url,
         "commit_sha" => analysis.resolved_sha,
@@ -49,11 +50,14 @@ defmodule PatchwritApi.Tribunal.Investigator do
           "summary" => finding.summary,
           "severity" => finding.severity,
           "fixed_versions" => finding.fixed_versions,
+          "affected_ranges" => advisory_affected_ranges(finding),
           "references" => advisory_references(finding),
           "affected" => "reported",
           "reachability" => "unknown"
         }
       ],
+      "graph" => graph_block(analysis),
+      "evidence" => evidence_index(dep, finding, analysis),
       "collection" => %{
         "tools" => ["maven-dependency-plugin:3.8.1", "osv-api"],
         "worker_image" => analysis.worker_image,
@@ -67,19 +71,32 @@ defmodule PatchwritApi.Tribunal.Investigator do
   @doc """
   (Re)builds cases for every finding of the analysis. Rebuilding
   replaces the analysis's cases wholesale, matching scan semantics.
+  Each case freezes its dossier into `dossier_snapshot` (versioned and
+  hashed) at build time; tribunal stages must read the snapshot.
   """
   def investigate_analysis(%Analysis{} = analysis) do
     case_attrs =
       Enum.map(Findings.list_findings_for_analysis(analysis.id), fn finding ->
+        packet = build_packet(analysis, finding)
+
         %{
           "analysis_id" => analysis.id,
           "finding_id" => finding.id,
           "status" => "evidence_ready",
-          "packet" => build_packet(analysis, finding)
+          "packet" => packet,
+          "dossier_version" => packet["dossier_version"],
+          "dossier_snapshot" => packet,
+          "snapshot_hash" => snapshot_hash(packet)
         }
       end)
 
     Tribunal.replace_cases(analysis, case_attrs)
+  end
+
+  @doc "Stable SHA-256 fingerprint of a dossier packet."
+  def snapshot_hash(packet) do
+    :crypto.hash(:sha256, :erlang.term_to_binary(packet))
+    |> Base.encode16(case: :lower)
   end
 
   # -- dependency linkage -------------------------------------------------
@@ -108,6 +125,51 @@ defmodule PatchwritApi.Tribunal.Investigator do
   defp dep_introduction_path(dep), do: dep_introduction_paths(dep) |> List.first([])
 
   # -- packet pieces -------------------------------------------------------
+
+  # Stable evidence IDs the tribunal may cite. Phoenix validates model
+  # citations against exactly this set for the snapshotted version.
+  defp evidence_index(dep, finding, analysis) do
+    paths = dep_introduction_paths(dep)
+
+    base = [
+      %{"id" => "source", "kind" => "source"},
+      %{"id" => "artifact", "kind" => "artifact"},
+      %{"id" => "advisory:#{finding.osv_id}", "kind" => "advisory"},
+      %{"id" => "graph", "kind" => "graph_completeness"},
+      %{"id" => "collection", "kind" => "collection_provenance"}
+    ]
+
+    path_entries =
+      paths
+      |> Enum.with_index()
+      |> Enum.map(fn {_path, i} -> %{"id" => "path:#{i}", "kind" => "introduction_path"} end)
+
+    base ++ path_entries ++ missing_entries(analysis)
+  end
+
+  defp missing_entries(_analysis), do: [%{"id" => "missing_context", "kind" => "missing_context"}]
+
+  defp graph_block(analysis) do
+    case get_in(analysis.result || %{}, ["graph"]) do
+      %{} = graph -> Map.put(graph, "status", "reported")
+      _ -> %{"status" => "unknown", "complete" => false}
+    end
+  end
+
+  # Affected version ranges for this finding's package, extracted from
+  # the raw OSV entry (ranges are evidence; the summary is not).
+  defp advisory_affected_ranges(finding) do
+    (finding.raw["affected"] || [])
+    |> Enum.filter(fn affected ->
+      get_in(affected, ["package", "name"]) == finding.package_name and
+        get_in(affected, ["package", "ecosystem"]) == "Maven"
+    end)
+    |> Enum.flat_map(fn affected ->
+      Enum.map(affected["ranges"] || [], fn range ->
+        %{"type" => range["type"], "events" => range["events"] || []}
+      end)
+    end)
+  end
 
   defp advisory_references(finding) do
     (finding.raw["references"] || [])
