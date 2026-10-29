@@ -4,18 +4,67 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
   use PatchwritApiWeb, :live_view
 
   alias PatchwritApi.Analyses
+  alias PatchwritApi.Analyses.DependencyGraph
   alias PatchwritApi.Findings
   import PatchwritApiWeb.AnalysisComponents
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
     analysis = Analyses.get_analysis!(id)
+    findings = Findings.list_findings_for_analysis(analysis.id)
+    dependencies = get_in(analysis.result || %{}, ["dependencies"]) || []
+    dep_modules = DependencyGraph.modules(dependencies)
 
     {:ok,
      socket
      |> assign(:analysis, analysis)
-     |> assign(:findings, Findings.list_findings_for_analysis(analysis.id))
+     |> assign(:findings, findings)
+     |> assign(:dep_rows, DependencyGraph.aggregate(dependencies))
+     |> assign(:dep_modules, dep_modules)
+     |> assign(:deps_module, List.first(dep_modules))
+     |> assign(:deps_view, "impact")
+     |> assign(:deps_query, "")
+     |> assign(:deps_limit, 25)
+     |> assign(
+       :vulnerable_coords,
+       MapSet.new(findings, &"#{&1.package_name}:#{&1.package_version}")
+     )
      |> assign(:introduced_via, introduced_via_map(analysis))}
+  end
+
+  @impl true
+  def handle_event("set_deps_view", %{"view" => view}, socket)
+      when view in ~w(impact direct all tree) do
+    {:noreply, assign(socket, deps_view: view, deps_limit: 25)}
+  end
+
+  def handle_event("deps_search", %{"query" => query}, socket) do
+    {:noreply, assign(socket, deps_query: query, deps_limit: 25)}
+  end
+
+  def handle_event("more_deps", _params, socket) do
+    {:noreply, assign(socket, deps_limit: socket.assigns.deps_limit + 50)}
+  end
+
+  def handle_event("select_deps_module", %{"module" => module}, socket) do
+    {:noreply, assign(socket, deps_module: module)}
+  end
+
+  # Rows for the table views, after view selection and search filtering.
+  defp visible_dep_rows(assigns) do
+    rows =
+      case assigns.deps_view do
+        "direct" -> Enum.filter(assigns.dep_rows, & &1.direct)
+        _ -> assigns.dep_rows
+      end
+
+    query = String.downcase(String.trim(assigns.deps_query))
+
+    if query == "" do
+      rows
+    else
+      Enum.filter(rows, &String.contains?(String.downcase(&1.coordinate), query))
+    end
   end
 
   defp via_label(introduced_via, finding) do
@@ -36,6 +85,73 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
       path = (dep["introduction_paths"] || []) |> List.first(dep["introduced_via"] || [])
       {"#{dep["group_id"]}:#{dep["artifact_id"]}:#{dep["version"]}", path}
     end)
+  end
+
+  attr :rows, :list, required: true
+  attr :vulnerable, :any, required: true
+
+  defp deps_table(assigns) do
+    ~H"""
+    <div class="pw-table-wrap">
+      <table class="pw-table">
+        <thead>
+          <tr>
+            <th>Dependency</th>
+            <th>Modules</th>
+            <th>Paths</th>
+            <th>Depth</th>
+            <th>Scopes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr :for={row <- @rows}>
+            <td data-label="Dependency">
+              <span class="pw-mono">{row.coordinate}</span>
+              <span
+                :if={MapSet.member?(@vulnerable, row.coordinate)}
+                class="pw-badge pw-verdict--remediate"
+              >
+                Vulnerable
+              </span>
+              <span :if={row.direct} class="pw-badge pw-verdict--investigate">Direct</span>
+            </td>
+            <td data-label="Modules">{row.module_count}</td>
+            <td data-label="Paths">{row.path_count}</td>
+            <td data-label="Depth">{row.min_depth}</td>
+            <td data-label="Scopes">{Enum.join(row.scopes, ", ")}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    """
+  end
+
+  attr :nodes, :list, required: true
+  attr :vulnerable, :any, required: true
+  attr :depth, :integer, default: 0
+
+  defp deps_tree(assigns) do
+    ~H"""
+    <ul class="pw-tree">
+      <li :for={{name, children} <- @nodes}>
+        <details :if={children != []} open={@depth == 0}>
+          <summary>
+            <span class="pw-mono">{name}</span>
+            <span :if={MapSet.member?(@vulnerable, name)} class="pw-badge pw-verdict--remediate">
+              Vulnerable
+            </span>
+          </summary>
+          <.deps_tree nodes={children} vulnerable={@vulnerable} depth={@depth + 1} />
+        </details>
+        <span :if={children == []}>
+          <span class="pw-mono">{name}</span>
+          <span :if={MapSet.member?(@vulnerable, name)} class="pw-badge pw-verdict--remediate">
+            Vulnerable
+          </span>
+        </span>
+      </li>
+    </ul>
+    """
   end
 
   @impl true
@@ -117,9 +233,12 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           <div class="pw-result-head">
             <div>
               <span class="pw-panel-kicker">Maven graph</span>
-              <h2>Dependencies ({length(@analysis.result["dependencies"])})</h2>
+              <h2>Dependencies ({length(@dep_rows)} unique)</h2>
             </div>
-            <p>Effective graph from the pinned checkout. First 50 shown.</p>
+            <p>
+              {length(@analysis.result["dependencies"])} resolved entries across {length(@dep_modules)} modules. Impact = module spread and introduction-path fan-in (build-graph
+              structure, not runtime usage).
+            </p>
             <p :if={@analysis.result["graph"] && @analysis.result["graph"]["complete"]}>
               Graph complete ({@analysis.result["graph"]["modules_resolved"]}/{@analysis.result[
                 "graph"
@@ -134,17 +253,68 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
               Legacy result — graph completeness unknown.
             </p>
           </div>
-          <ul class="pw-analysis-list">
-            <li :for={dep <- Enum.take(@analysis.result["dependencies"], 50)} class="pw-analysis-row">
-              <span class="pw-mono">{dep["group_id"]}:{dep["artifact_id"]}:{dep["version"]}</span>
-              <div class="pw-meta">
-                <span>depth {dep["depth"]}</span>
-                <span :if={dep["scope"]}>scope {dep["scope"]}</span>
-                <span :if={dep["module"]}>module {dep["module"]}</span>
-                <span>via {(dep["introduction_paths"] || []) |> List.first([]) |> List.last()}</span>
-              </div>
-            </li>
-          </ul>
+
+          <div class="pw-deps-controls">
+            <div class="pw-tabs" role="tablist" aria-label="Dependency views">
+              <button
+                :for={
+                  {view, label} <- [
+                    {"impact", "Impact"},
+                    {"direct", "Direct"},
+                    {"all", "All"},
+                    {"tree", "Tree"}
+                  ]
+                }
+                type="button"
+                class={["pw-tab", @deps_view == view && "pw-tab--active"]}
+                phx-click="set_deps_view"
+                phx-value-view={view}
+              >
+                {label}
+              </button>
+            </div>
+            <form phx-change="deps_search" class="pw-deps-search">
+              <input
+                type="text"
+                name="query"
+                value={@deps_query}
+                placeholder="Filter by coordinate…"
+                phx-debounce="200"
+              />
+            </form>
+          </div>
+
+          <%= if @deps_view == "tree" do %>
+            <div :if={length(@dep_modules) > 1} class="pw-module-chips">
+              <button
+                :for={module <- @dep_modules}
+                type="button"
+                class={["pw-tab", @deps_module == module && "pw-tab--active"]}
+                phx-click="select_deps_module"
+                phx-value-module={module}
+              >
+                {module}
+              </button>
+            </div>
+            <.deps_tree
+              nodes={DependencyGraph.tree(@analysis.result["dependencies"], @deps_module)}
+              vulnerable={@vulnerable_coords}
+            />
+          <% else %>
+            <% rows = visible_dep_rows(assigns) %>
+            <p class="pw-count">
+              Showing {min(@deps_limit, length(rows))} of {length(rows)} unique dependencies
+            </p>
+            <.deps_table rows={Enum.take(rows, @deps_limit)} vulnerable={@vulnerable_coords} />
+            <button
+              :if={length(rows) > @deps_limit}
+              type="button"
+              class="pw-expand-button"
+              phx-click="more_deps"
+            >
+              Show more
+            </button>
+          <% end %>
         </section>
 
         <section :if={@analysis.status == "completed"} class="pw-result">
