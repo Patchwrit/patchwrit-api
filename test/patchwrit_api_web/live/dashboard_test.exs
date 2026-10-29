@@ -92,7 +92,7 @@ defmodule PatchwritApiWeb.DashboardTest do
     assert html =~ "presence: confirmed"
     assert html =~ "exploitability: unknown"
     # Repository posture and tribunal progress.
-    assert html =~ "1 need attention"
+    assert html =~ "1 action needed"
     assert html =~ "tribunal 1/1"
   end
 

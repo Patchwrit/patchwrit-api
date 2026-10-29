@@ -330,7 +330,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
                 <%= if (posture = @postures[repository.id]).latest do %>
                   <.status_badge status={posture.latest.status} />
                   <span>{posture.findings} findings</span>
-                  <span>{posture.attention} need attention</span>
+                  <span>{posture.attention} action needed</span>
                   <span>{posture.coverage}</span>
                   <span>{posture.evaluated}</span>
                   <.verdict_badge :if={posture.worst} recommendation={posture.worst} />

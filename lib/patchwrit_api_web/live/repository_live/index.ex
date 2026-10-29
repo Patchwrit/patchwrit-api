@@ -189,8 +189,8 @@ defmodule PatchwritApiWeb.RepositoryLive.Index do
               <thead>
                 <tr>
                   <th>Repository</th>
-                  <th>Top recommendation</th>
-                  <th>Attention</th>
+                  <th>Tribunal status</th>
+                  <th>Action needed</th>
                   <th>Findings</th>
                   <th>Coverage</th>
                   <th>Latest run</th>
@@ -218,7 +218,7 @@ defmodule PatchwritApiWeb.RepositoryLive.Index do
                       </span>
                     </div>
                   </td>
-                  <td data-label="Top recommendation">
+                  <td data-label="Tribunal status">
                     <.verdict_badge :if={posture.worst} recommendation={posture.worst} />
                     <div :if={posture.worst} class="pw-repo-sub">
                       from {posture.judged} judged {if posture.judged == 1,
@@ -232,7 +232,7 @@ defmodule PatchwritApiWeb.RepositoryLive.Index do
                       Not judged
                     </span>
                   </td>
-                  <td data-label="Attention">
+                  <td data-label="Action needed">
                     <span :if={posture.latest && posture.attention > 0} class="pw-attention-count">
                       {posture.attention}
                     </span>
