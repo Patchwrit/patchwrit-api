@@ -26,17 +26,26 @@ defmodule PatchwritApi.GitHub do
   @spec repository_branches(String.t()) :: {:ok, repository_branches()} | {:error, String.t()}
   def repository_branches(repository_url) do
     with {:ok, owner, repo} <- parse_repository_url(repository_url),
-         {:ok, default_branch} <- fetch_default_branch(owner, repo),
+         {:ok, metadata} <- fetch_repository_metadata(owner, repo),
          {:ok, branches} <- fetch_branches(owner, repo) do
-      {:ok, %{default_branch: default_branch, branches: branches}}
+      {:ok,
+       %{
+         default_branch: metadata.default_branch,
+         name: metadata.name,
+         branches: branches
+       }}
     end
   end
 
-  defp fetch_default_branch(owner, repo) do
+  # The repository's own metadata: its current full name (which follows
+  # renames/redirects, unlike the typed URL) and default branch.
+  defp fetch_repository_metadata(owner, repo) do
     case request_body("/repos/#{owner}/#{repo}") do
-      {:ok, %{"default_branch" => default_branch}} -> {:ok, default_branch}
-      {:ok, _body} -> {:ok, nil}
-      {:error, message} -> {:error, message}
+      {:ok, body} ->
+        {:ok, %{default_branch: body["default_branch"], name: body["full_name"]}}
+
+      {:error, message} ->
+        {:error, message}
     end
   end
 

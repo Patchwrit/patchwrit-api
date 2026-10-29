@@ -30,6 +30,19 @@
     </script>
   </head>
   <body class="patchwrit">
+    <script>
+      if (localStorage.getItem("pw:sidebar") === "collapsed") {
+        document.body.classList.add("pw-sidebar-collapsed");
+      }
+    </script>
     {@inner_content}
+    <script>
+      document.addEventListener("click", (event) => {
+        const toggle = event.target.closest("[data-pw-sidebar-toggle]");
+        if (!toggle) return;
+        const collapsed = document.body.classList.toggle("pw-sidebar-collapsed");
+        localStorage.setItem("pw:sidebar", collapsed ? "collapsed" : "expanded");
+      });
+    </script>
   </body>
 </html>

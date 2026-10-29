@@ -76,7 +76,7 @@ defmodule PatchwritApiWeb.AnalysisLiveTest do
     |> render_submit()
 
     html = render(view)
-    assert html =~ @repo
+    assert html =~ "spring-petclinic/spring-framework-petclinic"
     assert html =~ "JDK 17"
     assert html =~ "javaconfig"
 

@@ -21,6 +21,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
   alias PatchwritApi.Repositories
   alias PatchwritApi.Repositories.Repository
   alias PatchwritApi.Tribunal
+  alias PatchwritApiWeb.RepoPosture
   import PatchwritApiWeb.AnalysisComponents
 
   @impl true
@@ -46,7 +47,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
     |> assign(:analyses, analyses)
     |> assign(:stats, dashboard_stats(analyses))
     |> assign(:attention, Tribunal.attention_queue(10))
-    |> assign(:postures, repo_postures(repositories, analyses))
+    |> assign(:postures, RepoPosture.postures(repositories, analyses))
     |> assign(:summaries, analysis_summaries(analyses))
   end
 
@@ -63,6 +64,11 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
   end
 
   def handle_event("save_repository", %{"repository" => params}, socket) do
+    params =
+      if name = socket.assigns[:fetched_repo_name],
+        do: Map.put(params, "name", name),
+        else: params
+
     case Repositories.create_repository(params) do
       {:ok, _repository} ->
         {:noreply,
@@ -114,7 +120,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
 
       true ->
         case GitHub.repository_branches(repository_url) do
-          {:ok, %{default_branch: default_branch, branches: branches}} ->
+          {:ok, %{default_branch: default_branch, branches: branches} = fetched} ->
             params =
               if params["default_ref"] in [nil, "", "HEAD"] or
                    socket.assigns.branches_for_url != repository_url do
@@ -128,6 +134,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
              |> assign(:branch_options, Enum.map(branches, & &1.name))
              |> assign(:branches_for_url, repository_url)
              |> assign(:branch_state, :loaded)
+             |> assign(:fetched_repo_name, fetched.name)
              |> assign(:branch_error, nil)}
 
           {:error, message} ->
@@ -146,20 +153,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
     assign(socket, :repository_form, to_form(changeset))
   end
 
-  defp latest_analysis(analyses, repository) do
-    Enum.find(analyses, &(&1.repository_id == repository.id))
-  end
-
   # -- dashboard data ---------------------------------------------------------
-
-  @attention_recommendations ~w(remediate_now needs_human_review investigate_usage)
-  @recommendation_rank %{
-    "remediate_now" => 0,
-    "needs_human_review" => 1,
-    "investigate_usage" => 2,
-    "schedule_remediation" => 3,
-    "dismiss" => 4
-  }
 
   defp dashboard_stats(analyses) do
     counts = Tribunal.verdict_recommendation_counts()
@@ -195,39 +189,6 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
     ]
   end
 
-  defp repo_postures(repositories, analyses) do
-    Map.new(repositories, fn repository ->
-      case latest_analysis(analyses, repository) do
-        nil ->
-          {repository.id, %{latest: nil}}
-
-        latest ->
-          verdicts =
-            latest.id
-            |> Tribunal.latest_verdicts_for_analysis()
-            |> Map.values()
-
-          {repository.id,
-           %{
-             latest: latest,
-             findings: Findings.count_findings_for_analysis(latest.id),
-             attention: Enum.count(verdicts, &(&1.recommendation in @attention_recommendations)),
-             worst: worst_recommendation(verdicts),
-             coverage: graph_label(latest),
-             evaluated: evaluated_label(latest)
-           }}
-      end
-    end)
-  end
-
-  defp worst_recommendation([]), do: nil
-
-  defp worst_recommendation(verdicts) do
-    verdicts
-    |> Enum.min_by(&Map.get(@recommendation_rank, &1.recommendation, 5))
-    |> Map.get(:recommendation)
-  end
-
   defp analysis_summaries(analyses) do
     Map.new(analyses, fn analysis ->
       {analysis.id,
@@ -240,24 +201,6 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
            |> map_size()
        }}
     end)
-  end
-
-  defp graph_label(analysis) do
-    graph = analysis.result && analysis.result["graph"]
-
-    cond do
-      is_map(graph) and graph["complete"] ->
-        "Graph complete (#{graph["modules_resolved"]}/#{graph["modules_total"]} modules)"
-
-      is_map(graph) ->
-        "Graph partial (#{graph["modules_resolved"]}/#{graph["modules_total"]} modules)"
-
-      analysis.status == "completed" ->
-        "Graph completeness unknown"
-
-      true ->
-        "Not yet evaluated"
-    end
   end
 
   defp case_graph_label(case_record) do
@@ -276,14 +219,6 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
     end
   end
 
-  defp evaluated_label(analysis) do
-    if analysis.osv_scanned_at do
-      "Evaluated #{Calendar.strftime(analysis.osv_scanned_at, "%Y-%m-%d")}"
-    else
-      "Updated #{Calendar.strftime(analysis.updated_at, "%Y-%m-%d")}"
-    end
-  end
-
   defp one_line(nil), do: nil
 
   defp one_line(text) do
@@ -297,68 +232,6 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
     |> String.split("/")
     |> Enum.take(-2)
     |> Enum.join("/")
-  end
-
-  # -- setup panel (used prominently when empty, demoted otherwise) -----------
-
-  attr :repository_form, :any, required: true
-  attr :branch_options, :list, required: true
-  attr :branch_state, :atom, required: true
-  attr :branch_error, :string, required: true
-
-  defp repository_setup(assigns) do
-    ~H"""
-    <section class="pw-panel" aria-labelledby="track-repository-title">
-      <span class="pw-panel-kicker">New repository</span>
-      <h2 id="track-repository-title">Track a repository</h2>
-      <p class="pw-panel-copy">
-        Branches load from GitHub as soon as a valid repository link is entered. The Java version stays manual—you know your project best.
-      </p>
-
-      <.form
-        for={@repository_form}
-        id="repository-form"
-        phx-change="validate_repository"
-        phx-submit="save_repository"
-        class="pw-form"
-      >
-        <.input
-          field={@repository_form[:repository_url]}
-          label="Repository URL"
-          placeholder="https://github.com/owner/repo"
-          phx-debounce="400"
-        />
-
-        <.input
-          :if={@branch_options != []}
-          field={@repository_form[:default_ref]}
-          type="select"
-          label="Branch"
-          options={@branch_options}
-        />
-        <.input
-          :if={@branch_options == []}
-          field={@repository_form[:default_ref]}
-          label="Branch / ref"
-          placeholder="main"
-        />
-        <p :if={@branch_state == :loaded} class="pw-branch-note">
-          Branches loaded from GitHub. The default branch is selected.
-        </p>
-        <p :if={@branch_state == :error} class="pw-branch-error">
-          Could not load branches: {@branch_error} You can still enter a branch or ref manually.
-        </p>
-
-        <.input
-          field={@repository_form[:java_version]}
-          type="select"
-          label="Java version"
-          options={["JDK 17": "17", "JDK 21": "21"]}
-        />
-        <button type="submit" class="pw-submit">Track Repository</button>
-      </.form>
-    </section>
-    """
   end
 
   @impl true
@@ -450,14 +323,14 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
 
           <ul :if={@repositories != []} class="pw-analysis-list">
             <li :for={repository <- @repositories} class="pw-analysis-row">
-              <span class="pw-repo-link">{repository.repository_url}</span>
+              <span class="pw-repo-link">{Repository.display_name(repository)}</span>
               <div class="pw-meta">
                 <span>branch: <span class="pw-mono">{repository.default_ref}</span></span>
                 <span>JDK {repository.java_version}</span>
                 <%= if (posture = @postures[repository.id]).latest do %>
                   <.status_badge status={posture.latest.status} />
                   <span>{posture.findings} findings</span>
-                  <span>{posture.attention} need attention</span>
+                  <span>{posture.attention} action needed</span>
                   <span>{posture.coverage}</span>
                   <span>{posture.evaluated}</span>
                   <.verdict_badge :if={posture.worst} recommendation={posture.worst} />

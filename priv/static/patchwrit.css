@@ -184,6 +184,80 @@ body.patchwrit .pw-nav-item--active {
   color: #fff;
 }
 
+body.patchwrit .pw-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pw-nav-icon {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+}
+
+.pw-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pw-sidebar-toggle {
+  display: grid;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  background: rgb(255 255 255 / 6%);
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 6px;
+  color: #cfd9d1;
+  cursor: pointer;
+}
+
+.pw-sidebar-toggle:hover {
+  background: rgb(255 255 255 / 12%);
+  color: #fff;
+}
+
+.pw-toggle-icon {
+  width: 16px;
+  height: 16px;
+  transition: transform 160ms ease;
+}
+
+/* Collapsed: slim icon rail, content takes the width back. Desktop only;
+   under 900px the sidebar is already a top bar. */
+@media (min-width: 901px) {
+  body.pw-sidebar-collapsed .pw-app {
+    grid-template-columns: 68px minmax(0, 1fr);
+  }
+
+  body.pw-sidebar-collapsed .pw-sidebar {
+    align-items: center;
+    padding: 22px 10px;
+  }
+
+  body.pw-sidebar-collapsed .pw-sidebar-head {
+    flex-direction: column;
+  }
+
+  body.pw-sidebar-collapsed .pw-brand-copy,
+  body.pw-sidebar-collapsed .pw-nav-label {
+    display: none;
+  }
+
+  body.pw-sidebar-collapsed .pw-nav-item {
+    justify-content: center;
+    padding: 10px;
+  }
+
+  body.pw-sidebar-collapsed .pw-toggle-icon {
+    transform: rotate(180deg);
+  }
+}
+
 body.patchwrit .pw-track-cta {
   flex: 0 0 auto;
   padding: 12px 16px;
@@ -764,6 +838,127 @@ body.patchwrit .pw-track-cta:hover {
 
 .pw-dashboard-section {
   margin-top: 32px;
+}
+
+/* -- Repositories table ------------------------------------------------ */
+
+.pw-table-wrap {
+  overflow: hidden;
+  background: var(--pw-panel);
+  border: 1px solid var(--pw-line);
+  border-radius: 8px;
+}
+
+.pw-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.pw-table th {
+  padding: 12px 14px;
+  background: var(--pw-panel-subtle);
+  border-bottom: 1px solid var(--pw-line);
+  color: var(--pw-muted);
+  font-family: var(--pw-mono);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.pw-table td {
+  padding: 14px;
+  border-bottom: 1px solid var(--pw-line);
+  color: var(--pw-ink-soft);
+  line-height: 1.5;
+  vertical-align: middle;
+}
+
+.pw-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.pw-table tbody tr:hover {
+  background: var(--pw-panel-subtle);
+}
+
+.pw-table .pw-repo-link {
+  font-size: 14px;
+}
+
+.pw-muted {
+  color: var(--pw-muted);
+}
+
+.pw-attention-count {
+  display: inline-grid;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  place-items: center;
+  background: var(--pw-policy-bg);
+  border-radius: 999px;
+  color: #fff;
+  font-family: var(--pw-mono);
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.pw-clean-note {
+  color: var(--pw-success-text);
+  font-weight: 800;
+}
+
+.pw-repo-sub {
+  margin-top: 5px;
+  color: var(--pw-muted);
+  font-family: var(--pw-mono);
+  font-size: 12px;
+}
+
+.pw-table .pw-run-button {
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .pw-table thead {
+    display: none;
+  }
+
+  .pw-table,
+  .pw-table tbody,
+  .pw-table tr,
+  .pw-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .pw-table tr {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--pw-line);
+  }
+
+  .pw-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 8px 14px;
+    border-bottom: 0;
+    text-align: right;
+  }
+
+  .pw-table td::before {
+    content: attr(data-label);
+    color: var(--pw-muted);
+    font-family: var(--pw-mono);
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
 }
 
 .pw-progress-note {
