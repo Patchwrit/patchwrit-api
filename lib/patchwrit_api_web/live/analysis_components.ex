@@ -15,30 +15,53 @@ defmodule PatchwritApiWeb.AnalysisComponents do
   def app_sidebar(assigns) do
     ~H"""
     <aside class="pw-sidebar">
-      <a href="/analyses" class="pw-sidebar-brand">
-        <span class="pw-mark">PW</span>
-        <span class="pw-brand-copy">
-          <strong>Patchwrit</strong>
-          <span>Analysis console</span>
-        </span>
-      </a>
+      <div class="pw-sidebar-head">
+        <a href="/analyses" class="pw-sidebar-brand">
+          <span class="pw-mark">PW</span>
+          <span class="pw-brand-copy">
+            <strong>Patchwrit</strong>
+            <span>Analysis console</span>
+          </span>
+        </a>
+        <button
+          type="button"
+          class="pw-sidebar-toggle"
+          data-pw-sidebar-toggle
+          aria-label="Collapse or expand sidebar"
+          title="Collapse or expand sidebar"
+        >
+          <.icon name="hero-chevron-left" class="pw-toggle-icon" />
+        </button>
+      </div>
 
       <nav class="pw-sidebar-nav" aria-label="Primary">
         <a
           href="/analyses"
+          title="Docket"
           class={["pw-nav-item", @active == "docket" && "pw-nav-item--active"]}
         >
-          Docket
+          <.icon name="hero-squares-2x2" class="pw-nav-icon" />
+          <span class="pw-nav-label">Docket</span>
         </a>
         <a
           href="/repositories"
+          title="Repositories"
           class={["pw-nav-item", @active == "repositories" && "pw-nav-item--active"]}
         >
-          Repositories
+          <.icon name="hero-folder" class="pw-nav-icon" />
+          <span class="pw-nav-label">Repositories</span>
         </a>
-        <a href="/analyses#recent-analyses-title" class="pw-nav-item">Analyses</a>
-        <span :if={@active == "analysis"} class="pw-nav-item pw-nav-item--active">
-          Analysis detail
+        <a href="/analyses#recent-analyses-title" title="Analyses" class="pw-nav-item">
+          <.icon name="hero-clock" class="pw-nav-icon" />
+          <span class="pw-nav-label">Analyses</span>
+        </a>
+        <span
+          :if={@active == "analysis"}
+          title="Analysis detail"
+          class="pw-nav-item pw-nav-item--active"
+        >
+          <.icon name="hero-document-magnifying-glass" class="pw-nav-icon" />
+          <span class="pw-nav-label">Analysis detail</span>
         </span>
       </nav>
     </aside>
