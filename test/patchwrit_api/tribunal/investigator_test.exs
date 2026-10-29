@@ -55,7 +55,21 @@ defmodule PatchwritApi.Tribunal.InvestigatorTest do
           "aliases" => ["CVE-2021-44228"],
           "raw" => %{
             "id" => "GHSA-jfh8-c2jp-5v3q",
-            "references" => [%{"type" => "ADVISORY", "url" => "https://example.com/adv"}]
+            "references" => [%{"type" => "ADVISORY", "url" => "https://example.com/adv"}],
+            "affected" => [
+              %{
+                "package" => %{
+                  "name" => "org.apache.logging.log4j:log4j-core",
+                  "ecosystem" => "Maven"
+                },
+                "ranges" => [
+                  %{
+                    "type" => "ECOSYSTEM",
+                    "events" => [%{"introduced" => "2.13.0"}, %{"fixed" => "2.17.0"}]
+                  }
+                ]
+              }
+            ]
           }
         },
         %{
@@ -116,6 +130,46 @@ defmodule PatchwritApi.Tribunal.InvestigatorTest do
     assert packet["artifact"]["direct"] == false
     assert "no_fixed_version_published" in packet["missing_context"]
     assert "severity_not_reported" in packet["missing_context"]
+  end
+
+  test "packet v2 carries evidence IDs, advisory ranges, and graph state", %{
+    analysis: analysis,
+    log4j: finding
+  } do
+    packet = Investigator.build_packet(analysis, finding)
+
+    assert packet["schema_version"] == 2
+    assert packet["dossier_version"] == 2
+
+    ids = Enum.map(packet["evidence"], & &1["id"])
+    assert "artifact" in ids
+    assert "advisory:GHSA-jfh8-c2jp-5v3q" in ids
+    assert "path:0" in ids
+    assert "graph" in ids
+    assert "missing_context" in ids
+
+    [advisory] = packet["advisories"]
+
+    assert advisory["affected_ranges"] == [
+             %{
+               "type" => "ECOSYSTEM",
+               "events" => [%{"introduced" => "2.13.0"}, %{"fixed" => "2.17.0"}]
+             }
+           ]
+
+    # No v2 graph block on this analysis: unknown, not assumed complete.
+    assert packet["graph"] == %{"status" => "unknown", "complete" => false}
+  end
+
+  test "investigate freezes a hashed snapshot equal to the dossier", %{
+    analysis: analysis
+  } do
+    assert {:ok, cases} = Investigator.investigate_analysis(analysis)
+    assert [case_record | _] = cases
+    assert case_record.dossier_version == 2
+    assert case_record.dossier_snapshot == case_record.packet
+    assert case_record.snapshot_hash == Investigator.snapshot_hash(case_record.packet)
+    assert case_record.snapshot_hash =~ ~r/^[0-9a-f]{64}$/
   end
 
   test "investigate persists one case per finding and rebuild replaces", %{
