@@ -41,19 +41,10 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="pw-shell">
-      <header class="pw-masthead">
-        <.link navigate={~p"/analyses"} class="pw-brand">
-          <span class="pw-mark">PW</span>
-          <span class="pw-brand-copy">
-            <strong>Patchwrit</strong>
-            <span>Analysis console</span>
-          </span>
-        </.link>
-        <p class="pw-masthead-note">Ephemeral Fly workers<br />Evidence-first results</p>
-      </header>
+    <div class="pw-app">
+      <.app_sidebar active="analysis" />
 
-      <main>
+      <main class="pw-main">
         <.link navigate={~p"/analyses"} class="pw-back-link">← All analyses</.link>
         <h1 class="pw-detail-title">{@analysis.repository_url}</h1>
 

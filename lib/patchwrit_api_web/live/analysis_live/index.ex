@@ -355,7 +355,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
           label="Java version"
           options={["JDK 17": "17", "JDK 21": "21"]}
         />
-        <button type="submit" class="pw-submit">Track repository</button>
+        <button type="submit" class="pw-submit">Track Repository</button>
       </.form>
     </section>
     """
@@ -364,166 +364,163 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="pw-shell pw-shell--wide">
-      <header class="pw-masthead">
-        <.link navigate={~p"/analyses"} class="pw-brand">
-          <span class="pw-mark">PW</span>
-          <span class="pw-brand-copy">
-            <strong>Patchwrit</strong>
-            <span>Analysis console</span>
-          </span>
-        </.link>
-        <p class="pw-masthead-note">Ephemeral Fly workers<br />Evidence-first results</p>
-      </header>
+    <div class="pw-app">
+      <.app_sidebar active="docket" />
 
-      <div class="pw-docket-head">
-        <h1>Your security docket</h1>
-        <p>
-          What needs your attention across tracked repositories—tribunal verdicts first, evidence one click away.
-        </p>
-      </div>
-
-      <section class="pw-stat-strip" aria-label="Attention summary">
-        <div :for={stat <- @stats} class={["pw-stat-card", stat.modifier]}>
-          <span class="pw-stat-value">{stat.value}</span>
-          <span class="pw-stat-label">{stat.label}</span>
-          <span class="pw-stat-sub">{stat.sub}</span>
-        </div>
-      </section>
-
-      <.repository_setup
-        :if={@repositories == []}
-        repository_form={@repository_form}
-        branch_options={@branch_options}
-        branch_state={@branch_state}
-        branch_error={@branch_error}
-      />
-
-      <section class="pw-dashboard-section" aria-labelledby="needs-attention-title">
-        <div class="pw-section-head">
+      <main class="pw-main">
+        <div class="pw-docket-head">
           <div>
-            <span class="pw-panel-kicker">Tribunal</span>
-            <h2 id="needs-attention-title">Needs attention</h2>
+            <h1>Your security docket</h1>
+            <p>
+              What needs your attention across tracked repositories—tribunal verdicts first, evidence one click away.
+            </p>
           </div>
-          <span class="pw-count">{length(@attention)} cases</span>
+          <a href="#track-repository-title" class="pw-track-cta">+ Track Repository</a>
         </div>
 
-        <div :if={@attention == []} class="pw-empty">
-          <strong>Nothing needs attention</strong>
-          No completed tribunal verdict currently asks for remediation, human review, or usage investigation.
-        </div>
-
-        <ul :if={@attention != []} class="pw-analysis-list">
-          <li :for={verdict <- @attention} class="pw-analysis-row pw-attention-row">
-            <div>
-              <.link
-                navigate={~p"/analyses/#{verdict.tribunal_case.analysis_id}"}
-                class="pw-repo-link"
-              >
-                {repo_short_name(verdict.tribunal_case.analysis.repository_url)} · {verdict.tribunal_case.finding.package_name}:{verdict.tribunal_case.finding.package_version}
-              </.link>
-              <div class="pw-meta">
-                <span class="pw-mono">{verdict.tribunal_case.finding.osv_id}</span>
-                <span>presence: {verdict.presence}</span>
-                <span>exploitability: {verdict.exploitability}</span>
-                <span>priority: {verdict.priority}</span>
-                <span>{case_graph_label(verdict.tribunal_case)}</span>
-              </div>
-              <p :if={verdict.rationale} class="pw-attention-why">{one_line(verdict.rationale)}</p>
-            </div>
-            <div class="pw-attention-badges">
-              <.policy_capped_badge verdict={verdict} />
-              <.verdict_badge recommendation={verdict.recommendation} />
-            </div>
-          </li>
-        </ul>
-      </section>
-
-      <section class="pw-dashboard-section" aria-labelledby="tracked-repositories-title">
-        <div class="pw-section-head">
-          <div>
-            <span class="pw-panel-kicker">Library</span>
-            <h2 id="tracked-repositories-title">Your repositories</h2>
+        <section class="pw-stat-strip" aria-label="Attention summary">
+          <div :for={stat <- @stats} class={["pw-stat-card", stat.modifier]}>
+            <span class="pw-stat-value">{stat.value}</span>
+            <span class="pw-stat-label">{stat.label}</span>
+            <span class="pw-stat-sub">{stat.sub}</span>
           </div>
-          <span class="pw-count">{length(@repositories)} tracked</span>
-        </div>
+        </section>
 
-        <div :if={@repositories == []} class="pw-empty">
-          <strong>No tracked repositories yet</strong>
-          Add one from the form and it will be ready to run.
-        </div>
-
-        <ul :if={@repositories != []} class="pw-analysis-list">
-          <li :for={repository <- @repositories} class="pw-analysis-row">
-            <span class="pw-repo-link">{repository.repository_url}</span>
-            <div class="pw-meta">
-              <span>branch: <span class="pw-mono">{repository.default_ref}</span></span>
-              <span>JDK {repository.java_version}</span>
-              <%= if (posture = @postures[repository.id]).latest do %>
-                <.status_badge status={posture.latest.status} />
-                <span>{posture.findings} findings</span>
-                <span>{posture.attention} need attention</span>
-                <span>{posture.coverage}</span>
-                <span>{posture.evaluated}</span>
-                <.verdict_badge :if={posture.worst} recommendation={posture.worst} />
-              <% else %>
-                <span>No runs yet</span>
-              <% end %>
-            </div>
-            <button
-              id={"run-repository-#{repository.id}"}
-              type="button"
-              class="pw-run-button"
-              phx-click="run_repository"
-              phx-value-id={repository.id}
-            >
-              Run analysis
-            </button>
-          </li>
-        </ul>
-      </section>
-
-      <section class="pw-dashboard-section" aria-labelledby="recent-analyses-title">
-        <div class="pw-section-head">
-          <div>
-            <span class="pw-panel-kicker">History</span>
-            <h2 id="recent-analyses-title">Recent analyses</h2>
-          </div>
-          <span class="pw-count">{length(@analyses)} total</span>
-        </div>
-
-        <div :if={@analyses == []} class="pw-empty">
-          <strong>No analyses yet</strong> Run a tracked repository and the analysis will appear here.
-        </div>
-
-        <ul :if={@analyses != []} class="pw-analysis-list">
-          <li :for={analysis <- @analyses} class="pw-analysis-row">
-            <.link navigate={~p"/analyses/#{analysis.id}"} class="pw-repo-link">
-              {analysis.repository_url}
-            </.link>
-            <div class="pw-meta">
-              <span>ref: <span class="pw-mono">{analysis.requested_ref}</span></span>
-              <span :if={analysis.jdk_version}>JDK {analysis.jdk_version}</span>
-              <.status_badge status={analysis.status} />
-              <.cleanup_badge status={analysis.machine_cleanup_status} />
-              <span :if={@summaries[analysis.id].cases > 0} class="pw-progress-note">
-                {@summaries[analysis.id].findings} findings · tribunal {@summaries[analysis.id].judged}/{@summaries[
-                  analysis.id
-                ].cases} judged
-              </span>
-            </div>
-          </li>
-        </ul>
-      </section>
-
-      <section :if={@repositories != []} class="pw-dashboard-section" aria-label="Repository setup">
         <.repository_setup
+          :if={@repositories == []}
           repository_form={@repository_form}
           branch_options={@branch_options}
           branch_state={@branch_state}
           branch_error={@branch_error}
         />
-      </section>
+
+        <section class="pw-dashboard-section" aria-labelledby="needs-attention-title">
+          <div class="pw-section-head">
+            <div>
+              <span class="pw-panel-kicker">Tribunal</span>
+              <h2 id="needs-attention-title">Needs attention</h2>
+            </div>
+            <span class="pw-count">{length(@attention)} cases</span>
+          </div>
+
+          <div :if={@attention == []} class="pw-empty">
+            <strong>Nothing needs attention</strong>
+            No completed tribunal verdict currently asks for remediation, human review, or usage investigation.
+          </div>
+
+          <ul :if={@attention != []} class="pw-analysis-list">
+            <li :for={verdict <- @attention} class="pw-analysis-row pw-attention-row">
+              <div>
+                <.link
+                  navigate={~p"/analyses/#{verdict.tribunal_case.analysis_id}"}
+                  class="pw-repo-link"
+                >
+                  {repo_short_name(verdict.tribunal_case.analysis.repository_url)} · {verdict.tribunal_case.finding.package_name}:{verdict.tribunal_case.finding.package_version}
+                </.link>
+                <div class="pw-meta">
+                  <span class="pw-mono">{verdict.tribunal_case.finding.osv_id}</span>
+                  <span>presence: {verdict.presence}</span>
+                  <span>exploitability: {verdict.exploitability}</span>
+                  <span>priority: {verdict.priority}</span>
+                  <span>{case_graph_label(verdict.tribunal_case)}</span>
+                </div>
+                <p :if={verdict.rationale} class="pw-attention-why">{one_line(verdict.rationale)}</p>
+              </div>
+              <div class="pw-attention-badges">
+                <.policy_capped_badge verdict={verdict} />
+                <.verdict_badge recommendation={verdict.recommendation} />
+              </div>
+            </li>
+          </ul>
+        </section>
+
+        <section class="pw-dashboard-section" aria-labelledby="tracked-repositories-title">
+          <div class="pw-section-head">
+            <div>
+              <span class="pw-panel-kicker">Library</span>
+              <h2 id="tracked-repositories-title">Your repositories</h2>
+            </div>
+            <span class="pw-count">{length(@repositories)} tracked</span>
+          </div>
+
+          <div :if={@repositories == []} class="pw-empty">
+            <strong>No tracked repositories yet</strong>
+            Add one from the form and it will be ready to run.
+          </div>
+
+          <ul :if={@repositories != []} class="pw-analysis-list">
+            <li :for={repository <- @repositories} class="pw-analysis-row">
+              <span class="pw-repo-link">{repository.repository_url}</span>
+              <div class="pw-meta">
+                <span>branch: <span class="pw-mono">{repository.default_ref}</span></span>
+                <span>JDK {repository.java_version}</span>
+                <%= if (posture = @postures[repository.id]).latest do %>
+                  <.status_badge status={posture.latest.status} />
+                  <span>{posture.findings} findings</span>
+                  <span>{posture.attention} need attention</span>
+                  <span>{posture.coverage}</span>
+                  <span>{posture.evaluated}</span>
+                  <.verdict_badge :if={posture.worst} recommendation={posture.worst} />
+                <% else %>
+                  <span>No runs yet</span>
+                <% end %>
+              </div>
+              <button
+                id={"run-repository-#{repository.id}"}
+                type="button"
+                class="pw-run-button"
+                phx-click="run_repository"
+                phx-value-id={repository.id}
+              >
+                Run analysis
+              </button>
+            </li>
+          </ul>
+        </section>
+
+        <section class="pw-dashboard-section" aria-labelledby="recent-analyses-title">
+          <div class="pw-section-head">
+            <div>
+              <span class="pw-panel-kicker">History</span>
+              <h2 id="recent-analyses-title">Recent analyses</h2>
+            </div>
+            <span class="pw-count">{length(@analyses)} total</span>
+          </div>
+
+          <div :if={@analyses == []} class="pw-empty">
+            <strong>No analyses yet</strong>
+            Run a tracked repository and the analysis will appear here.
+          </div>
+
+          <ul :if={@analyses != []} class="pw-analysis-list">
+            <li :for={analysis <- @analyses} class="pw-analysis-row">
+              <.link navigate={~p"/analyses/#{analysis.id}"} class="pw-repo-link">
+                {analysis.repository_url}
+              </.link>
+              <div class="pw-meta">
+                <span>ref: <span class="pw-mono">{analysis.requested_ref}</span></span>
+                <span :if={analysis.jdk_version}>JDK {analysis.jdk_version}</span>
+                <.status_badge status={analysis.status} />
+                <.cleanup_badge status={analysis.machine_cleanup_status} />
+                <span :if={@summaries[analysis.id].cases > 0} class="pw-progress-note">
+                  {@summaries[analysis.id].findings} findings · tribunal {@summaries[analysis.id].judged}/{@summaries[
+                    analysis.id
+                  ].cases} judged
+                </span>
+              </div>
+            </li>
+          </ul>
+        </section>
+
+        <section :if={@repositories != []} class="pw-dashboard-section" aria-label="Repository setup">
+          <.repository_setup
+            repository_form={@repository_form}
+            branch_options={@branch_options}
+            branch_state={@branch_state}
+            branch_error={@branch_error}
+          />
+        </section>
+      </main>
     </div>
     """
   end

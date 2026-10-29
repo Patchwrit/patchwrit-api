@@ -3,6 +3,41 @@ defmodule PatchwritApiWeb.AnalysisComponents do
 
   use Phoenix.Component
 
+  attr :active, :string, default: "docket"
+
+  @doc """
+  App sidebar: brand and primary nav only. Rendered by every console
+  page so the product reads as one full-screen application. Page
+  content (stats, actions) belongs in the page, never in the menu.
+  """
+  def app_sidebar(assigns) do
+    ~H"""
+    <aside class="pw-sidebar">
+      <a href="/analyses" class="pw-sidebar-brand">
+        <span class="pw-mark">PW</span>
+        <span class="pw-brand-copy">
+          <strong>Patchwrit</strong>
+          <span>Analysis console</span>
+        </span>
+      </a>
+
+      <nav class="pw-sidebar-nav" aria-label="Primary">
+        <a
+          href="/analyses"
+          class={["pw-nav-item", @active == "docket" && "pw-nav-item--active"]}
+        >
+          Docket
+        </a>
+        <a href="/analyses#tracked-repositories-title" class="pw-nav-item">Repositories</a>
+        <a href="/analyses#recent-analyses-title" class="pw-nav-item">Analyses</a>
+        <span :if={@active == "analysis"} class="pw-nav-item pw-nav-item--active">
+          Analysis detail
+        </span>
+      </nav>
+    </aside>
+    """
+  end
+
   attr :status, :string, required: true
 
   def status_badge(assigns) do
