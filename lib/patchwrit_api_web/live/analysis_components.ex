@@ -3,6 +3,8 @@ defmodule PatchwritApiWeb.AnalysisComponents do
 
   use Phoenix.Component
 
+  import PatchwritApiWeb.CoreComponents
+
   attr :active, :string, default: "docket"
 
   @doc """
@@ -28,13 +30,81 @@ defmodule PatchwritApiWeb.AnalysisComponents do
         >
           Docket
         </a>
-        <a href="/analyses#tracked-repositories-title" class="pw-nav-item">Repositories</a>
+        <a
+          href="/repositories"
+          class={["pw-nav-item", @active == "repositories" && "pw-nav-item--active"]}
+        >
+          Repositories
+        </a>
         <a href="/analyses#recent-analyses-title" class="pw-nav-item">Analyses</a>
         <span :if={@active == "analysis"} class="pw-nav-item pw-nav-item--active">
           Analysis detail
         </span>
       </nav>
     </aside>
+    """
+  end
+
+  # -- repository setup panel (shared by the docket and repositories page) -----
+
+  attr :repository_form, :any, required: true
+  attr :branch_options, :list, required: true
+  attr :branch_state, :atom, required: true
+  attr :branch_error, :string, required: true
+
+  @doc "Track-a-repository form panel (branch fetch is handled by the LiveView)."
+  def repository_setup(assigns) do
+    ~H"""
+    <section class="pw-panel" aria-labelledby="track-repository-title">
+      <span class="pw-panel-kicker">New repository</span>
+      <h2 id="track-repository-title">Track a repository</h2>
+      <p class="pw-panel-copy">
+        Branches load from GitHub as soon as a valid repository link is entered. The Java version stays manual—you know your project best.
+      </p>
+
+      <.form
+        for={@repository_form}
+        id="repository-form"
+        phx-change="validate_repository"
+        phx-submit="save_repository"
+        class="pw-form"
+      >
+        <.input
+          field={@repository_form[:repository_url]}
+          label="Repository URL"
+          placeholder="https://github.com/owner/repo"
+          phx-debounce="400"
+        />
+
+        <.input
+          :if={@branch_options != []}
+          field={@repository_form[:default_ref]}
+          type="select"
+          label="Branch"
+          options={@branch_options}
+        />
+        <.input
+          :if={@branch_options == []}
+          field={@repository_form[:default_ref]}
+          label="Branch / ref"
+          placeholder="main"
+        />
+        <p :if={@branch_state == :loaded} class="pw-branch-note">
+          Branches loaded from GitHub. The default branch is selected.
+        </p>
+        <p :if={@branch_state == :error} class="pw-branch-error">
+          Could not load branches: {@branch_error} You can still enter a branch or ref manually.
+        </p>
+
+        <.input
+          field={@repository_form[:java_version]}
+          type="select"
+          label="Java version"
+          options={["JDK 17": "17", "JDK 21": "21"]}
+        />
+        <button type="submit" class="pw-submit">Track Repository</button>
+      </.form>
+    </section>
     """
   end
 

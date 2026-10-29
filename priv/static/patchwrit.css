@@ -766,6 +766,133 @@ body.patchwrit .pw-track-cta:hover {
   margin-top: 32px;
 }
 
+/* -- Repositories table ------------------------------------------------ */
+
+.pw-table-wrap {
+  overflow: hidden;
+  background: var(--pw-panel);
+  border: 1px solid var(--pw-line);
+  border-radius: 8px;
+}
+
+.pw-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.pw-table th {
+  padding: 12px 14px;
+  background: var(--pw-panel-subtle);
+  border-bottom: 1px solid var(--pw-line);
+  color: var(--pw-muted);
+  font-family: var(--pw-mono);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.pw-table td {
+  padding: 14px;
+  border-bottom: 1px solid var(--pw-line);
+  color: var(--pw-ink-soft);
+  line-height: 1.5;
+  vertical-align: middle;
+}
+
+.pw-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.pw-table tbody tr:hover {
+  background: var(--pw-panel-subtle);
+}
+
+.pw-table .pw-repo-link {
+  font-size: 14px;
+}
+
+.pw-muted {
+  color: var(--pw-muted);
+}
+
+.pw-attention-count {
+  display: inline-grid;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  place-items: center;
+  background: var(--pw-policy-bg);
+  border-radius: 999px;
+  color: #fff;
+  font-family: var(--pw-mono);
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.pw-clean-note {
+  color: var(--pw-success-text);
+  font-weight: 800;
+}
+
+.pw-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.pw-row-actions .pw-run-button {
+  margin-top: 0;
+}
+
+body.patchwrit .pw-view-link {
+  font-weight: 800;
+  text-decoration-color: var(--pw-accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 900px) {
+  .pw-table thead {
+    display: none;
+  }
+
+  .pw-table,
+  .pw-table tbody,
+  .pw-table tr,
+  .pw-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .pw-table tr {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--pw-line);
+  }
+
+  .pw-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 8px 14px;
+    border-bottom: 0;
+    text-align: right;
+  }
+
+  .pw-table td::before {
+    content: attr(data-label);
+    color: var(--pw-muted);
+    font-family: var(--pw-mono);
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+}
+
 .pw-progress-note {
   font-family: var(--pw-mono);
   font-size: 12px;
