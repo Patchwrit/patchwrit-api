@@ -16,7 +16,7 @@ defmodule PatchwritApi.Tribunal.Case do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 
-  @statuses ~w(evidence_ready)
+  @statuses ~w(evidence_ready opinions_ready)
 
   schema "tribunal_cases" do
     belongs_to :analysis, PatchwritApi.Analyses.Analysis
