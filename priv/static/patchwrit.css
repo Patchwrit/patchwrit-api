@@ -1103,3 +1103,10 @@ body.patchwrit .pw-tab--active {
 .pw-tree .pw-badge {
   margin-left: 7px;
 }
+
+.pw-view-note {
+  margin: 0 0 12px;
+  color: var(--pw-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}

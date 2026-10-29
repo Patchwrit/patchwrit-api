@@ -51,11 +51,23 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
   end
 
   # Rows for the table views, after view selection and search filtering.
+  # Each view must mean something distinct: Impact ranks hubs (module
+  # roots excluded — the project itself is not a dependency), Direct is
+  # the human-chosen set A-Z, All is the full inventory A-Z.
   defp visible_dep_rows(assigns) do
     rows =
       case assigns.deps_view do
-        "direct" -> Enum.filter(assigns.dep_rows, & &1.direct)
-        _ -> assigns.dep_rows
+        "impact" ->
+          Enum.filter(assigns.dep_rows, &(&1.min_depth >= 1))
+
+        "direct" ->
+          assigns.dep_rows |> Enum.filter(& &1.direct) |> Enum.sort_by(& &1.coordinate)
+
+        "all" ->
+          Enum.sort_by(assigns.dep_rows, & &1.coordinate)
+
+        _ ->
+          assigns.dep_rows
       end
 
     query = String.downcase(String.trim(assigns.deps_query))
@@ -89,6 +101,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
 
   attr :rows, :list, required: true
   attr :vulnerable, :any, required: true
+  attr :ranked, :boolean, default: false
 
   defp deps_table(assigns) do
     ~H"""
@@ -96,6 +109,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
       <table class="pw-table">
         <thead>
           <tr>
+            <th :if={@ranked}>Rank</th>
             <th>Dependency</th>
             <th>Modules</th>
             <th>Paths</th>
@@ -104,7 +118,10 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           </tr>
         </thead>
         <tbody>
-          <tr :for={row <- @rows}>
+          <tr :for={{row, index} <- Enum.with_index(@rows, 1)}>
+            <td :if={@ranked} data-label="Rank">
+              <span class="pw-mono">{index}</span>
+            </td>
             <td data-label="Dependency">
               <span class="pw-mono">{row.coordinate}</span>
               <span
@@ -284,6 +301,20 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
             </form>
           </div>
 
+          <p class="pw-view-note">
+            <%= case @deps_view do %>
+              <% "impact" -> %>
+                Hubs first: ranked by how many modules use a dependency and how many
+                introduction paths reach it. The project itself is excluded.
+              <% "direct" -> %>
+                Dependencies declared directly in a POM — the human-chosen set, A–Z.
+              <% "all" -> %>
+                Every unique dependency in the resolved graph, A–Z. Search narrows it.
+              <% "tree" -> %>
+                Introduction chains for one module, in dependency:tree style.
+            <% end %>
+          </p>
+
           <%= if @deps_view == "tree" do %>
             <div :if={length(@dep_modules) > 1} class="pw-module-chips">
               <button
@@ -305,7 +336,11 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
             <p class="pw-count">
               Showing {min(@deps_limit, length(rows))} of {length(rows)} unique dependencies
             </p>
-            <.deps_table rows={Enum.take(rows, @deps_limit)} vulnerable={@vulnerable_coords} />
+            <.deps_table
+              rows={Enum.take(rows, @deps_limit)}
+              vulnerable={@vulnerable_coords}
+              ranked={@deps_view == "impact"}
+            />
             <button
               :if={length(rows) > @deps_limit}
               type="button"
