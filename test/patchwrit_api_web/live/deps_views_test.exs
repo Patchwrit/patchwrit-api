@@ -44,7 +44,7 @@ defmodule PatchwritApiWeb.DepsViewsTest do
     analysis
   end
 
-  test "impact view ranks and direct view filters", %{conn: conn} do
+  test "essential table with direct-only filter and search", %{conn: conn} do
     analysis = seed()
     {:ok, view, html} = live(conn, "/analyses/#{analysis.id}")
 
@@ -61,12 +61,6 @@ defmodule PatchwritApiWeb.DepsViewsTest do
     view
     |> element("button[phx-click='toggle_direct_only']")
     |> render_click()
-
-    view
-    |> element("button[phx-click='set_deps_view'][phx-value-view='all']")
-    |> render_click()
-
-    assert has_element?(view, ".pw-table td", "org.hub:hub:2.0")
 
     view
     |> form("form[phx-change='deps_search']", %{query: "hub"})

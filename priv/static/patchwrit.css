@@ -1110,3 +1110,16 @@ body.patchwrit .pw-tab--active {
   font-size: 13px;
   line-height: 1.55;
 }
+
+.pw-dep-detail {
+  text-align: left;
+  white-space: normal;
+  color: var(--pw-ink-soft);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.pw-dep-paths {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

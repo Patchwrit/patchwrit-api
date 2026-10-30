@@ -22,8 +22,9 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
      |> assign(:dep_rows, DependencyGraph.aggregate(dependencies))
      |> assign(:dep_modules, dep_modules)
      |> assign(:deps_module, List.first(dep_modules))
-     |> assign(:deps_view, "impact")
+     |> assign(:deps_view, "table")
      |> assign(:deps_direct_only, false)
+     |> assign(:expanded_dep, nil)
      |> assign(:deps_query, "")
      |> assign(:deps_limit, 25)
      |> assign(
@@ -35,8 +36,13 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
 
   @impl true
   def handle_event("set_deps_view", %{"view" => view}, socket)
-      when view in ~w(impact all tree) do
+      when view in ~w(table tree) do
     {:noreply, assign(socket, deps_view: view, deps_limit: 25)}
+  end
+
+  def handle_event("toggle_dep", %{"coordinate" => coordinate}, socket) do
+    expanded = if socket.assigns.expanded_dep == coordinate, do: nil, else: coordinate
+    {:noreply, assign(socket, expanded_dep: expanded)}
   end
 
   def handle_event("toggle_direct_only", _params, socket) do
@@ -55,17 +61,16 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
     {:noreply, assign(socket, deps_module: module)}
   end
 
-  # Rows for the table views, after view selection and search filtering.
-  # Impact ranks hubs (module roots excluded — the project itself is
-  # not a dependency); All is the full inventory A-Z. "Direct only" is
-  # a filter over either, not a view of its own.
+  # Essential table only: vulnerable first, then A-Z. Everything else
+  # about a dependency lives in its expanded detail, not in columns.
   defp visible_dep_rows(assigns) do
     rows =
-      case assigns.deps_view do
-        "impact" -> Enum.filter(assigns.dep_rows, &(&1.min_depth >= 1))
-        "all" -> Enum.sort_by(assigns.dep_rows, & &1.coordinate)
-        _ -> assigns.dep_rows
-      end
+      assigns.dep_rows
+      |> Enum.filter(&(&1.min_depth >= 1))
+      |> Enum.sort_by(fn row ->
+        {if(MapSet.member?(assigns.vulnerable_coords, row.coordinate), do: 0, else: 1),
+         row.coordinate}
+      end)
 
     rows =
       if assigns.deps_direct_only,
@@ -103,47 +108,75 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
 
   attr :rows, :list, required: true
   attr :vulnerable, :any, required: true
-  attr :ranked, :boolean, default: false
+  attr :expanded, :string, default: nil
 
+  # Essential columns only: what it is, its scope, whether it is a
+  # finding. Depth/modules/paths live in the expanded detail.
   defp deps_table(assigns) do
     ~H"""
     <div class="pw-table-wrap">
       <table class="pw-table">
         <thead>
           <tr>
-            <th :if={@ranked}>Rank</th>
             <th>Dependency</th>
-            <th>Modules</th>
-            <th>Paths</th>
-            <th>Downstream</th>
-            <th>Depth</th>
-            <th>Scopes</th>
+            <th>Scope</th>
+            <th>Status</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
-          <tr :for={{row, index} <- Enum.with_index(@rows, 1)}>
-            <td :if={@ranked} data-label="Rank">
-              <span class="pw-mono">{index}</span>
-            </td>
-            <td data-label="Dependency">
-              <span class="pw-mono">{row.coordinate}</span>
-              <span
-                :if={MapSet.member?(@vulnerable, row.coordinate)}
-                class="pw-badge pw-verdict--remediate"
-              >
-                Vulnerable
-              </span>
-              <span :if={row.direct} class="pw-badge pw-verdict--investigate">Direct</span>
-            </td>
-            <td data-label="Modules">
-              <span :if={row.module_count > 0}>{row.module_count}</span>
-              <span :if={row.module_count == 0} class="pw-muted">—</span>
-            </td>
-            <td data-label="Paths">{row.path_count}</td>
-            <td data-label="Downstream">{row.downstream}</td>
-            <td data-label="Depth">{row.min_depth}</td>
-            <td data-label="Scopes">{Enum.join(row.scopes, ", ")}</td>
-          </tr>
+          <%= for row <- @rows do %>
+            <tr>
+              <td data-label="Dependency">
+                <span class="pw-mono">{row.coordinate}</span>
+                <span :if={row.direct} class="pw-badge pw-verdict--investigate">Direct</span>
+              </td>
+              <td data-label="Scope">{Enum.join(row.scopes, ", ")}</td>
+              <td data-label="Status">
+                <span
+                  :if={MapSet.member?(@vulnerable, row.coordinate)}
+                  class="pw-badge pw-verdict--remediate"
+                >
+                  Vulnerable
+                </span>
+                <span :if={!MapSet.member?(@vulnerable, row.coordinate)} class="pw-muted">—</span>
+              </td>
+              <td>
+                <button
+                  type="button"
+                  class="pw-expand-button"
+                  phx-click="toggle_dep"
+                  phx-value-coordinate={row.coordinate}
+                >
+                  {if @expanded == row.coordinate, do: "Hide", else: "Details"}
+                </button>
+              </td>
+            </tr>
+            <tr :if={@expanded == row.coordinate}>
+              <td colspan="4" class="pw-case-cell">
+                <div class="pw-dep-detail">
+                  <p>
+                    Depth {row.min_depth} (1 = declared directly in a POM)<span :if={
+                      row.module_count > 0
+                    }>
+                      · appears in {row.module_count} module(s)</span>
+                    <span>
+                      · reached by {row.path_count} introduction path(s)
+                    </span>
+                    <span>
+                      · {row.downstream} dependencies sit beneath it
+                    </span>
+                  </p>
+                  <p :if={row.paths != []} class="pw-mono pw-dep-paths">
+                    <span :for={path <- Enum.take(row.paths, 5)}>
+                      {Enum.join(path, " → ")}<br />
+                    </span>
+                    <span :if={length(row.paths) > 5}>…and {length(row.paths) - 5} more paths</span>
+                  </p>
+                </div>
+              </td>
+            </tr>
+          <% end %>
         </tbody>
       </table>
     </div>
@@ -283,8 +316,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
               <button
                 :for={
                   {view, label} <- [
-                    {"impact", "Impact"},
-                    {"all", "All"},
+                    {"table", "Table"},
                     {"tree", "Tree"}
                   ]
                 }
@@ -317,15 +349,11 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           </div>
 
           <p class="pw-view-note">
-            <%= case @deps_view do %>
-              <% "impact" -> %>
-                Hubs first: ranked by module spread, then downstream reach (how much of
-                the graph sits beneath a dependency), then introduction-path fan-in.
-                Depth counts edges from the project: 1 = declared directly in a POM.
-              <% "all" -> %>
-                Every unique dependency in the resolved graph, A–Z. Search narrows it.
-              <% "tree" -> %>
-                Introduction chains for one module, in dependency:tree style.
+            <%= if @deps_view == "tree" do %>
+              Introduction chains for one module, in dependency:tree style.
+            <% else %>
+              Every unique dependency, vulnerable first. Details hold depth, modules, and
+              the introduction paths behind each row.
             <% end %>
           </p>
 
@@ -353,7 +381,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
             <.deps_table
               rows={Enum.take(rows, @deps_limit)}
               vulnerable={@vulnerable_coords}
-              ranked={@deps_view == "impact"}
+              expanded={@expanded_dep}
             />
             <button
               :if={length(rows) > @deps_limit}
