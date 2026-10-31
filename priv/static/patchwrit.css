@@ -1029,6 +1029,91 @@ body.patchwrit .pw-track-cta:hover {
   }
 }
 
+/* -- Dependency views ------------------------------------------------------ */
+
+.pw-deps-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.pw-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+body.patchwrit .pw-tab {
+  padding: 8px 13px;
+  background: var(--pw-panel);
+  border: 1px solid var(--pw-field-line);
+  border-radius: 999px;
+  color: var(--pw-ink-soft);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+body.patchwrit .pw-tab--active {
+  background: var(--pw-ink);
+  border-color: var(--pw-ink);
+  color: #fff;
+}
+
+.pw-deps-search input {
+  width: min(320px, 100%);
+  padding: 9px 12px;
+  background: #fbfcfb;
+  border: 1px solid var(--pw-field-line);
+  border-radius: 6px;
+  color: var(--pw-ink);
+  font: inherit;
+  font-size: 13.5px;
+}
+
+.pw-module-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.pw-tree {
+  padding-left: 20px;
+  margin: 0;
+  list-style: none;
+}
+
+.pw-tree li {
+  margin: 5px 0;
+  color: var(--pw-ink-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.pw-tree summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.pw-tree .pw-badge {
+  margin-left: 7px;
+}
+
+.pw-view-note {
+  margin: 0 0 12px;
+  color: var(--pw-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.pw-dep-detail {
+  text-align: left;
+  white-space: normal;
 /* -- Tribunal case panel ------------------------------------------------- */
 
 .pw-case-cell {
@@ -1102,6 +1187,35 @@ body.patchwrit .pw-track-cta:hover {
   line-height: 1.6;
 }
 
+.pw-dep-paths {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.pw-sbom-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 22px;
+  margin-bottom: 14px;
+  padding: 13px 16px;
+  background: var(--pw-panel-subtle);
+  border: 1px solid var(--pw-line);
+  border-radius: 8px;
+  color: var(--pw-ink-soft);
+  font-size: 13px;
+}
+
+.pw-sbom-summary strong {
+  color: var(--pw-muted);
+  font-family: var(--pw-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.pw-sbom-summary a {
+  margin-left: auto;
+  text-decoration: none;
 .pw-chip-row {
   display: flex;
   flex-wrap: wrap;
