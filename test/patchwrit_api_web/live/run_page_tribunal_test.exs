@@ -97,7 +97,7 @@ defmodule PatchwritApiWeb.RunPageTribunalTest do
     {analysis, finding, case_record} = seed_analysis()
     judge_case(case_record)
 
-    {:ok, view, html} = live(conn, "/analyses/#{analysis.id}")
+    {:ok, view, html} = live(conn, "/analyses/#{analysis.id}/findings")
     assert html =~ "Needs human review"
 
     html =
@@ -117,7 +117,7 @@ defmodule PatchwritApiWeb.RunPageTribunalTest do
   test "not-judged finding expands to the reason and a Run tribunal action", %{conn: conn} do
     {analysis, finding, case_record} = seed_analysis()
 
-    {:ok, view, _html} = live(conn, "/analyses/#{analysis.id}")
+    {:ok, view, _html} = live(conn, "/analyses/#{analysis.id}/findings")
 
     html =
       view
@@ -133,5 +133,14 @@ defmodule PatchwritApiWeb.RunPageTribunalTest do
 
     assert_enqueued(worker: RunTribunalCase, args: %{"case_id" => case_record.id})
     assert render(view) =~ "Queued"
+  end
+
+  test "deep link opens the case expanded", %{conn: conn} do
+    {analysis, finding, case_record} = seed_analysis()
+    judge_case(case_record)
+
+    {:ok, _view, html} = live(conn, "/analyses/#{analysis.id}/findings?case=#{finding.id}")
+    assert html =~ "POLICY OVERRIDE — HUMAN REVIEW REQUIRED"
+    assert html =~ "Presence is proven; exploitability is not established."
   end
 end

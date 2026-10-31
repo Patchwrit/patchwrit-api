@@ -38,10 +38,20 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
       end)
       |> Enum.sort_by(&row_sort_key/1)
 
+    top_outcomes =
+      rows
+      |> Enum.filter(
+        &(&1.verdict &&
+            &1.verdict.recommendation in ~w(remediate_now needs_human_review investigate_usage))
+      )
+      |> Enum.take(3)
+
     {:ok,
      socket
      |> assign(:analysis, analysis)
      |> assign(:findings, findings)
+     |> assign(:top_outcomes, top_outcomes)
+     |> assign(:judged_count, map_size(verdicts_by_case))
      |> assign(:dep_rows, DependencyGraph.aggregate(dependencies))
      |> assign(:dep_modules, dep_modules)
      |> assign(:deps_module, List.first(dep_modules))
@@ -63,6 +73,35 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
      |> assign(:expanded_opinions, [])
      |> assign(:queued_case_ids, MapSet.new())
      |> assign(:introduced_via, introduced_via_map(analysis))}
+  end
+
+  @impl true
+  def handle_params(params, _uri, socket) do
+    socket =
+      case {socket.assigns.live_action, params["case"]} do
+        {:findings, finding_id} when is_binary(finding_id) ->
+          opinions =
+            case Enum.find(socket.assigns.finding_rows, &(&1.finding.id == finding_id)) do
+              %{case: %{id: case_id}} -> Tribunal.list_opinions_for_case(case_id)
+              _ -> []
+            end
+
+          socket
+          |> assign(:expanded_finding_id, finding_id)
+          |> assign(:expanded_opinions, opinions)
+
+        _ ->
+          socket
+      end
+
+    socket =
+      if socket.assigns.live_action == :dependencies and is_binary(params["dep"]) do
+        assign(socket, deps_query: params["dep"])
+      else
+        socket
+      end
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -200,6 +239,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
   attr :rows, :list, required: true
   attr :vulnerable, :any, required: true
   attr :finding_ids, :map, default: %{}
+  attr :analysis_id, :string, default: nil
   attr :expanded, :string, default: nil
 
   # Essential columns only: what it is, its scope, whether it is a
@@ -227,7 +267,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
               <td data-label="Status">
                 <a
                   :if={MapSet.member?(@vulnerable, row.coordinate)}
-                  href={"#finding-#{@finding_ids[row.coordinate]}"}
+                  href={"/analyses/#{@analysis_id}/findings?case=#{@finding_ids[row.coordinate]}"}
                   class="pw-badge pw-verdict--remediate"
                 >
                   Vulnerable
@@ -465,7 +505,28 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           <.cleanup_badge status={@analysis.machine_cleanup_status} />
         </div>
 
-        <dl class="pw-detail-grid">
+        <nav class="pw-run-tabs" aria-label="Run sections">
+          <.link
+            navigate={~p"/analyses/#{@analysis.id}"}
+            class={["pw-run-tab", @live_action == :overview && "pw-run-tab--active"]}
+          >
+            Overview
+          </.link>
+          <.link
+            navigate={~p"/analyses/#{@analysis.id}/findings"}
+            class={["pw-run-tab", @live_action == :findings && "pw-run-tab--active"]}
+          >
+            Findings ({length(@findings)})
+          </.link>
+          <.link
+            navigate={~p"/analyses/#{@analysis.id}/dependencies"}
+            class={["pw-run-tab", @live_action == :dependencies && "pw-run-tab--active"]}
+          >
+            Dependencies ({length(@dep_rows)})
+          </.link>
+        </nav>
+
+        <dl :if={@live_action == :overview} class="pw-detail-grid">
           <div class="pw-detail-item">
             <dt>Analysis ID</dt>
             <dd class="pw-mono">{@analysis.id}</dd>
@@ -503,7 +564,10 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           <span :if={@analysis.error_message}>{@analysis.error_message}</span>
         </div>
 
-        <section :if={@analysis.result && @analysis.result["repository"]} class="pw-result">
+        <section
+          :if={@live_action == :overview && @analysis.result && @analysis.result["repository"]}
+          class="pw-result"
+        >
           <div class="pw-result-head">
             <div>
               <span class="pw-panel-kicker">Checkout evidence</span>
@@ -525,7 +589,42 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           </dl>
         </section>
 
-        <section :if={@analysis.result && @analysis.result["dependencies"]} class="pw-result">
+        <section :if={@live_action == :overview} class="pw-result">
+          <div class="pw-result-head">
+            <div>
+              <span class="pw-panel-kicker">Tribunal</span>
+              <h2>Outcome summary</h2>
+            </div>
+            <p>
+              {length(@findings)} findings · {@judged_count}/{length(@finding_rows)} cases judged · {length(
+                @dep_rows
+              )} unique dependencies. Full detail lives under Findings.
+            </p>
+          </div>
+          <p :if={@top_outcomes == []} class="pw-muted">
+            No tribunal verdicts need action on this run yet.
+          </p>
+          <ul :if={@top_outcomes != []} class="pw-analysis-list">
+            <li :for={row <- @top_outcomes} class="pw-analysis-row">
+              <.link
+                navigate={~p"/analyses/#{@analysis.id}/findings?case=#{row.finding.id}"}
+                class="pw-repo-link"
+              >
+                {row.finding.package_name}:{row.finding.package_version}
+              </.link>
+              <div class="pw-meta">
+                <span class="pw-mono">{row.finding.osv_id}</span>
+                <.policy_capped_badge verdict={row.verdict} />
+                <.verdict_badge recommendation={row.verdict.recommendation} />
+              </div>
+            </li>
+          </ul>
+        </section>
+
+        <section
+          :if={@live_action == :dependencies && @analysis.result && @analysis.result["dependencies"]}
+          class="pw-result"
+        >
           <div class="pw-result-head">
             <div>
               <span class="pw-panel-kicker">Software bill of materials</span>
@@ -644,6 +743,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
               rows={Enum.take(rows, @deps_limit)}
               vulnerable={@vulnerable_coords}
               finding_ids={@vulnerable_finding_ids}
+              analysis_id={@analysis.id}
               expanded={@expanded_dep}
             />
             <button
@@ -657,7 +757,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           <% end %>
         </section>
 
-        <section :if={@analysis.status == "completed"} class="pw-result">
+        <section :if={@live_action == :findings && @analysis.status == "completed"} class="pw-result">
           <div class="pw-result-head">
             <div>
               <span class="pw-panel-kicker">OSV scan + tribunal</span>
@@ -858,7 +958,10 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
         </section>
 
         <section
-          :if={@analysis.timings != %{} or (@analysis.result && @analysis.result["graph"])}
+          :if={
+            @live_action == :overview and
+              (@analysis.timings != %{} or (@analysis.result && @analysis.result["graph"]))
+          }
           class="pw-result"
         >
           <div class="pw-result-head">
@@ -905,7 +1008,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           </ul>
         </section>
 
-        <section :if={@analysis.result} class="pw-result">
+        <section :if={@live_action == :overview && @analysis.result} class="pw-result">
           <div class="pw-result-head">
             <div>
               <span class="pw-panel-kicker">Worker evidence</span>
