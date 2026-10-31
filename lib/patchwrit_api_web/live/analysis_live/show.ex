@@ -72,8 +72,223 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
      |> assign(:finding_row, nil)
      |> assign(:finding_opinions, [])
      |> assign(:audit_events, [])
+     |> assign(:audit_entries, [])
+     |> assign(:audit_summary, nil)
      |> assign(:queued_case_ids, MapSet.new())
-     |> assign(:introduced_via, introduced_via_map(analysis))}
+     |> assign(:introduced_via, introduced_via_map(analysis))
+     |> then(fn socket ->
+       if socket.assigns.live_action == :audit do
+         entries = audit_entries(analysis)
+
+         socket
+         |> assign(:audit_entries, entries)
+         |> assign(:audit_summary, audit_summary(entries))
+       else
+         socket
+       end
+     end)}
+  end
+
+  # -- audit tab --------------------------------------------------------------
+
+  # The run-wide decision stream: audit events enriched at read time
+  # from the opinion/verdict records they point to, so entries read as
+  # decisions ("Judge proposed X; policy capped it to Y because...")
+  # rather than machine log lines.
+  defp audit_entries(analysis) do
+    events = Tribunal.list_audit_events_for_analysis(analysis.id)
+    cases = Map.new(Tribunal.list_cases_for_analysis(analysis.id), &{&1.id, &1})
+
+    findings =
+      Map.new(Findings.list_findings_for_analysis(analysis.id), &{&1.id, &1})
+
+    opinions = Map.new(Tribunal.list_opinions_for_analysis(analysis.id), &{&1.id, &1})
+    verdicts = Map.new(Tribunal.list_verdicts_for_analysis(analysis.id), &{&1.id, &1})
+
+    Enum.map(events, fn event ->
+      case_record = cases[event.tribunal_case_id]
+      opinion = opinions[event.metadata["opinion_id"]]
+      verdict = verdicts[event.metadata["verdict_id"]]
+
+      %{
+        event: event,
+        case: case_record,
+        finding: case_record && findings[case_record.finding_id],
+        opinion: opinion,
+        verdict: verdict,
+        headline: audit_headline(event, opinion, verdict),
+        story: audit_story(event, opinion, verdict)
+      }
+    end)
+  end
+
+  defp audit_summary(entries) do
+    events = Enum.map(entries, & &1.event)
+    token_events = Enum.filter(events, &is_integer(&1.metadata["total_tokens"]))
+
+    total_tokens = Enum.sum_by(token_events, & &1.metadata["total_tokens"])
+    prompt_tokens = Enum.sum_by(token_events, &(&1.metadata["prompt_tokens"] || 0))
+    cached_tokens = Enum.sum_by(token_events, &(&1.metadata["cached_tokens"] || 0))
+
+    %{
+      judged: Enum.count(events, &(&1.event == "verdict_completed")),
+      tokens: total_tokens,
+      cached_pct:
+        if(prompt_tokens > 0,
+          do: round(cached_tokens / prompt_tokens * 100),
+          else: nil
+        ),
+      caps: Enum.count(events, &(&1.event == "policy_applied")),
+      failures: Enum.count(events, &(&1.event == "tribunal_failed"))
+    }
+  end
+
+  defp audit_headline(event, opinion, verdict)
+
+  defp audit_headline(%{event: "case_created"}, _opinion, _verdict), do: "Evidence collected"
+  defp audit_headline(%{event: "tribunal_queued"}, _opinion, _verdict), do: "Queued for tribunal"
+  defp audit_headline(%{event: "tribunal_started"}, _opinion, _verdict), do: "Tribunal started"
+
+  defp audit_headline(%{event: "tribunal_skipped"}, _opinion, _verdict),
+    do: "Skipped — already judged"
+
+  defp audit_headline(%{event: "tribunal_cancelled"}, _opinion, _verdict), do: "Cancelled"
+
+  defp audit_headline(%{event: "opinion_completed", actor: actor}, _opinion, _verdict),
+    do: "#{String.capitalize(actor)} argued the case"
+
+  defp audit_headline(%{event: "opinion_failed", actor: actor}, _opinion, _verdict),
+    do: "#{String.capitalize(actor)} opinion failed"
+
+  defp audit_headline(%{event: "verdict_completed"}, _opinion, verdict),
+    do: "Verdict: #{recommendation_label(verdict && verdict.recommendation)}"
+
+  defp audit_headline(%{event: "verdict_failed"}, _opinion, _verdict), do: "Judging failed"
+
+  defp audit_headline(%{event: "policy_applied"}, _opinion, _verdict),
+    do: "Policy capped the verdict"
+
+  defp audit_headline(%{event: "tribunal_completed"}, _opinion, _verdict), do: "Tribunal finished"
+  defp audit_headline(%{event: "tribunal_failed"}, _opinion, _verdict), do: "Tribunal failed"
+  defp audit_headline(%{event: other}, _opinion, _verdict), do: other
+
+  defp audit_story(event, opinion, verdict)
+
+  defp audit_story(%{event: "case_created", metadata: metadata}, _opinion, _verdict) do
+    "Dossier frozen (snapshot #{String.slice(metadata["snapshot_hash"] || "", 0, 12)}…). " <>
+      "Facts only — no model has seen this case yet."
+  end
+
+  defp audit_story(%{event: "tribunal_queued", metadata: metadata}, _opinion, _verdict) do
+    source =
+      case metadata["source"] do
+        "triage" -> "Selected automatically by triage under the per-analysis case cap."
+        "manual" -> "Queued manually."
+        _ -> "Queued."
+      end
+
+    models =
+      if metadata["advocate_model"] do
+        " Advocates: #{metadata["advocate_model"]} · Judge: #{metadata["judge_model"]}."
+      else
+        ""
+      end
+
+    source <> models
+  end
+
+  defp audit_story(%{event: "tribunal_started"}, _opinion, _verdict),
+    do: "Prosecutor, Defender, then Judge — each argued only from the frozen dossier."
+
+  defp audit_story(%{event: "tribunal_skipped"}, _opinion, _verdict),
+    do: "A completed verdict already exists, so nothing was re-argued and nothing was re-spent."
+
+  defp audit_story(%{event: "tribunal_cancelled"}, _opinion, _verdict),
+    do: "The case no longer exists (likely replaced by a rescan). Nothing ran."
+
+  defp audit_story(%{event: "opinion_completed", metadata: metadata}, opinion, _verdict) do
+    summary = if opinion, do: one_line(opinion.summary), else: nil
+
+    facts =
+      [
+        opinion && "#{length(opinion.citations)} evidence citation(s)",
+        opinion && "#{length(opinion.uncertainties)} uncertainty(ies) declared",
+        audit_tokens_part(metadata)
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(" · ")
+
+    [summary, facts] |> Enum.reject(&(&1 in [nil, ""])) |> Enum.join(" — ")
+  end
+
+  defp audit_story(%{event: "opinion_failed", metadata: metadata}, _opinion, _verdict) do
+    "The opinion was recorded as failed and the exchange stopped: #{metadata["error"]}"
+  end
+
+  defp audit_story(%{event: "verdict_completed", metadata: metadata}, _opinion, verdict) do
+    if verdict do
+      dimensions =
+        "Presence #{verdict.presence} · Application relevance #{verdict.application_relevance} · " <>
+          "Exploitability #{verdict.exploitability} · Priority #{verdict.priority}"
+
+      judge_part =
+        if verdict.judge_recommendation != verdict.recommendation do
+          "Judge proposed #{recommendation_label(verdict.judge_recommendation)}; " <>
+            "final recommendation is #{recommendation_label(verdict.recommendation)} (see policy entry). "
+        else
+          "Judge proposed #{recommendation_label(verdict.judge_recommendation)}. "
+        end
+
+      judge_part <> dimensions <> " — " <> one_line(verdict.rationale || "")
+    else
+      "Tokens: #{audit_tokens_part(metadata)}"
+    end
+  end
+
+  defp audit_story(%{event: "verdict_failed", metadata: metadata}, _opinion, _verdict) do
+    "No verdict was produced: #{metadata["error"]} The failure is recorded; re-running reuses any completed opinions."
+  end
+
+  defp audit_story(%{event: "policy_applied", metadata: metadata}, _opinion, _verdict) do
+    notes = metadata["policy_notes"] || []
+
+    "The Judge proposed #{recommendation_label(metadata["judge_recommendation"])}. " <>
+      "Deterministic policy (#{metadata["policy_version"]}) set the final recommendation to " <>
+      "#{recommendation_label(metadata["recommendation"])}" <>
+      if(notes != [], do: " — #{hd(notes)}", else: "") <>
+      " A cap records incomplete evidence; it is not a safety finding."
+  end
+
+  defp audit_story(%{event: "tribunal_completed", metadata: metadata}, _opinion, _verdict) do
+    duration =
+      if metadata["duration_ms"],
+        do: " in #{Float.round(metadata["duration_ms"] / 1000, 1)}s",
+        else: ""
+
+    "Finished#{duration}. Final recommendation: #{recommendation_label(metadata["recommendation"])}."
+  end
+
+  defp audit_story(%{event: "tribunal_failed", metadata: metadata}, _opinion, _verdict) do
+    "Stopped at the #{metadata["stage"]} stage: #{metadata["error"]} " <>
+      "Completed stages are kept; re-running will not re-spend on them."
+  end
+
+  defp audit_story(_event, _opinion, _verdict), do: ""
+
+  defp number(value) when is_integer(value) do
+    value
+    |> Integer.to_string()
+    |> String.replace(~r/(?<=\d)(?=(\d{3})+$)/, ",")
+  end
+
+  defp one_line(text) do
+    text = String.trim(text || "")
+
+    if String.length(text) <= 200 do
+      text
+    else
+      String.slice(text, 0, 197) <> "…"
+    end
   end
 
   # The finding detail page resolves its row in handle_params, where the
@@ -688,6 +903,12 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           >
             Dependencies ({length(@dep_rows)})
           </.link>
+          <.link
+            navigate={~p"/analyses/#{@analysis.id}/audit"}
+            class={["pw-run-tab", @live_action == :audit && "pw-run-tab--active"]}
+          >
+            Audit
+          </.link>
         </nav>
 
         <dl :if={@live_action == :overview} class="pw-detail-grid">
@@ -1105,6 +1326,72 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
               <span :if={audit_detail(event) != ""} class="pw-audit-detail">
                 {audit_detail(event)}
               </span>
+            </li>
+          </ol>
+        </section>
+
+        <section :if={@live_action == :audit} class="pw-result">
+          <div class="pw-result-head">
+            <div>
+              <span class="pw-panel-kicker">Audit</span>
+              <h2>Decision stream</h2>
+            </div>
+            <p>
+              Every recorded decision on this run, in the order it happened —
+              what was decided, by whom, and why.
+            </p>
+          </div>
+
+          <dl :if={@audit_summary} class="pw-detail-grid">
+            <div class="pw-detail-item">
+              <dt>Cases judged</dt>
+              <dd>{@audit_summary.judged}</dd>
+            </div>
+            <div class="pw-detail-item">
+              <dt>Tokens recorded</dt>
+              <dd>{number(@audit_summary.tokens)}</dd>
+            </div>
+            <div class="pw-detail-item">
+              <dt>Input served from cache</dt>
+              <dd>
+                {if @audit_summary.cached_pct != nil,
+                  do: "#{@audit_summary.cached_pct}%",
+                  else: "not measured yet"}
+              </dd>
+            </div>
+            <div class="pw-detail-item">
+              <dt>Policy caps</dt>
+              <dd>{@audit_summary.caps}</dd>
+            </div>
+            <div class="pw-detail-item">
+              <dt>Failed runs</dt>
+              <dd>{@audit_summary.failures}</dd>
+            </div>
+          </dl>
+
+          <p :if={@audit_entries == []} class="pw-muted">
+            No audit events recorded for this run yet. Cases investigated or
+            judged before the audit trail existed have no stream; new
+            tribunal activity is recorded as it happens.
+          </p>
+
+          <ol :if={@audit_entries != []} class="pw-audit-list">
+            <li :for={entry <- @audit_entries} class="pw-audit-item pw-audit-entry">
+              <div class="pw-audit-entry-head">
+                <span class="pw-audit-time">
+                  {Calendar.strftime(entry.event.inserted_at, "%Y-%m-%d %H:%M:%S")}
+                </span>
+                <strong class="pw-audit-headline">{entry.headline}</strong>
+                <span class="pw-audit-actor">{entry.event.actor}</span>
+                <.link
+                  :if={entry.finding}
+                  navigate={~p"/analyses/#{@analysis.id}/findings/#{entry.finding.id}"}
+                  class="pw-audit-case-link"
+                >
+                  {entry.finding.package_name}:{entry.finding.package_version}
+                </.link>
+              </div>
+              <p :if={entry.story != ""} class="pw-audit-story">{entry.story}</p>
             </li>
           </ol>
         </section>

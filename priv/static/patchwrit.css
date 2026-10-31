@@ -1401,3 +1401,33 @@ body.patchwrit .pw-run-tab--active {
   color: var(--pw-ink-soft);
   font-size: 12.5px;
 }
+
+.pw-audit-entry {
+  display: grid;
+  gap: 4px;
+}
+
+.pw-audit-entry-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+}
+
+.pw-audit-headline {
+  font-size: 13.5px;
+}
+
+.pw-audit-case-link {
+  margin-left: auto;
+  font-family: var(--pw-mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pw-audit-story {
+  margin: 0;
+  color: var(--pw-ink-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
