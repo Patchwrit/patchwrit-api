@@ -49,15 +49,18 @@ defmodule PatchwritApi.Workers.RunTribunalCaseTest do
 
     Req.Test.stub(@stub, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
-      system = hd(Jason.decode!(body)["messages"])["content"]
+      payload = Jason.decode!(body)
+      system = payload["instructions"] || ""
 
       content =
         if String.contains?(system, "You are the Judge"), do: @verdict_json, else: @opinion_json
 
       Req.Test.json(conn, %{
         "model" => "stub-model",
-        "choices" => [%{"message" => %{"role" => "assistant", "content" => content}}],
-        "usage" => %{"total_tokens" => 10}
+        "output" => [
+          %{"type" => "message", "content" => [%{"type" => "output_text", "text" => content}]}
+        ],
+        "usage" => %{"input_tokens" => 9, "output_tokens" => 1, "total_tokens" => 10}
       })
     end)
 

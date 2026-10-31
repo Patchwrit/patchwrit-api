@@ -21,7 +21,7 @@ defmodule PatchwritApi.Tribunal.Judge do
   alias PatchwritApi.Tribunal.PolicyGate
   alias PatchwritApi.Tribunal.Verdict
 
-  @prompt_version "judge_v1"
+  @prompt_version "judge_v2"
 
   def prompt_version, do: @prompt_version
 
@@ -58,7 +58,10 @@ defmodule PatchwritApi.Tribunal.Judge do
     else
       messages = build_messages(dossier, allowed_ids, prosecutor, defender)
 
-      case Client.complete(messages, model: model) do
+      case Client.complete(messages,
+             model: model,
+             prompt_cache_key: "#{@prompt_version}:#{hash}"
+           ) do
         {:ok, %{content: content, usage: usage}} ->
           case parse_and_validate(content, allowed_ids) do
             {:ok, judged} ->

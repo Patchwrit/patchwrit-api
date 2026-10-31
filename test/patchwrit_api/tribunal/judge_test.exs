@@ -102,7 +102,7 @@ defmodule PatchwritApi.Tribunal.JudgeTest do
     Req.Test.stub(@stub, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
       payload = Jason.decode!(body)
-      system = hd(payload["messages"])["content"]
+      system = payload["instructions"] || ""
 
       content =
         cond do
@@ -131,8 +131,10 @@ defmodule PatchwritApi.Tribunal.JudgeTest do
 
       Req.Test.json(conn, %{
         "model" => "stub-model",
-        "choices" => [%{"message" => %{"role" => "assistant", "content" => content}}],
-        "usage" => %{"total_tokens" => 99}
+        "output" => [
+          %{"type" => "message", "content" => [%{"type" => "output_text", "text" => content}]}
+        ],
+        "usage" => %{"input_tokens" => 90, "output_tokens" => 9, "total_tokens" => 99}
       })
     end)
   end
