@@ -1114,6 +1114,11 @@ body.patchwrit .pw-tab--active {
 .pw-dep-detail {
   text-align: left;
   white-space: normal;
+  color: var(--pw-ink-soft);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
 /* -- Tribunal case panel ------------------------------------------------- */
 
 .pw-case-cell {
@@ -1216,6 +1221,8 @@ body.patchwrit .pw-tab--active {
 .pw-sbom-summary a {
   margin-left: auto;
   text-decoration: none;
+}
+
 .pw-chip-row {
   display: flex;
   flex-wrap: wrap;
