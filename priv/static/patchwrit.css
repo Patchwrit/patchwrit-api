@@ -1123,3 +1123,29 @@ body.patchwrit .pw-tab--active {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+
+.pw-sbom-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 22px;
+  margin-bottom: 14px;
+  padding: 13px 16px;
+  background: var(--pw-panel-subtle);
+  border: 1px solid var(--pw-line);
+  border-radius: 8px;
+  color: var(--pw-ink-soft);
+  font-size: 13px;
+}
+
+.pw-sbom-summary strong {
+  color: var(--pw-muted);
+  font-family: var(--pw-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.pw-sbom-summary a {
+  margin-left: auto;
+  text-decoration: none;
+}

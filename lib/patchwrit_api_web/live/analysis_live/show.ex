@@ -31,6 +31,10 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
        :vulnerable_coords,
        MapSet.new(findings, &"#{&1.package_name}:#{&1.package_version}")
      )
+     |> assign(
+       :vulnerable_finding_ids,
+       Map.new(findings, &{"#{&1.package_name}:#{&1.package_version}", &1.id})
+     )
      |> assign(:introduced_via, introduced_via_map(analysis))}
   end
 
@@ -108,6 +112,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
 
   attr :rows, :list, required: true
   attr :vulnerable, :any, required: true
+  attr :finding_ids, :map, default: %{}
   attr :expanded, :string, default: nil
 
   # Essential columns only: what it is, its scope, whether it is a
@@ -133,12 +138,13 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
               </td>
               <td data-label="Scope">{Enum.join(row.scopes, ", ")}</td>
               <td data-label="Status">
-                <span
+                <a
                   :if={MapSet.member?(@vulnerable, row.coordinate)}
+                  href={"#finding-#{@finding_ids[row.coordinate]}"}
                   class="pw-badge pw-verdict--remediate"
                 >
                   Vulnerable
-                </span>
+                </a>
                 <span :if={!MapSet.member?(@vulnerable, row.coordinate)} class="pw-muted">—</span>
               </td>
               <td>
@@ -289,8 +295,8 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
         <section :if={@analysis.result && @analysis.result["dependencies"]} class="pw-result">
           <div class="pw-result-head">
             <div>
-              <span class="pw-panel-kicker">Maven graph</span>
-              <h2>Dependencies ({length(@dep_rows)} unique)</h2>
+              <span class="pw-panel-kicker">Software bill of materials</span>
+              <h2>Dependency inventory ({length(@dep_rows)} unique)</h2>
             </div>
             <p>
               {length(@analysis.result["dependencies"])} resolved entries across {length(@dep_modules)} modules. Impact = module spread and introduction-path fan-in (build-graph
@@ -309,6 +315,29 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
             <p :if={!@analysis.result["graph"]}>
               Legacy result — graph completeness unknown.
             </p>
+          </div>
+
+          <div class="pw-sbom-summary">
+            <span>
+              <strong>Graph</strong> {case @analysis.result["graph"] do
+                %{"complete" => true} = g ->
+                  "complete (#{g["modules_resolved"]}/#{g["modules_total"]} modules)"
+
+                %{} = g ->
+                  "partial (#{g["modules_resolved"]}/#{g["modules_total"]} modules)"
+
+                _ ->
+                  "completeness unknown"
+              end}
+            </span>
+            <span><strong>Unique</strong> {length(@dep_rows)}</span>
+            <span>
+              <strong>Direct</strong> {Enum.count(@dep_rows, & &1.direct)}
+            </span>
+            <span><strong>Vulnerable</strong> {MapSet.size(@vulnerable_coords)}</span>
+            <a href={"/analyses/#{@analysis.id}/sbom"} class="pw-expand-button" download>
+              Download SBOM (CycloneDX)
+            </a>
           </div>
 
           <div class="pw-deps-controls">
@@ -381,6 +410,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
             <.deps_table
               rows={Enum.take(rows, @deps_limit)}
               vulnerable={@vulnerable_coords}
+              finding_ids={@vulnerable_finding_ids}
               expanded={@expanded_dep}
             />
             <button
@@ -411,7 +441,11 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
             No known vulnerabilities in the scanned dependencies.
           </p>
           <ul class="pw-analysis-list">
-            <li :for={finding <- @findings} class="pw-analysis-row">
+            <li
+              :for={finding <- @findings}
+              id={"finding-#{finding.id}"}
+              class="pw-analysis-row"
+            >
               <span class="pw-mono">{finding.package_name}:{finding.package_version}</span>
               <span :if={finding.summary}>{finding.summary}</span>
               <div class="pw-meta">

@@ -48,7 +48,7 @@ defmodule PatchwritApiWeb.DepsViewsTest do
     analysis = seed()
     {:ok, view, html} = live(conn, "/analyses/#{analysis.id}")
 
-    assert html =~ "Dependencies (2 unique)"
+    assert html =~ "Dependency inventory (2 unique)"
     assert html =~ "org.hub:hub:2.0"
 
     view
