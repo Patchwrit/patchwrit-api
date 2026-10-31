@@ -166,6 +166,24 @@ defmodule PatchwritApi.Tribunal do
     |> Repo.insert()
   end
 
+  @doc "All opinions across an analysis's cases, for audit enrichment."
+  def list_opinions_for_analysis(analysis_id) do
+    Opinion
+    |> join(:inner, [o], c in Case, on: o.tribunal_case_id == c.id)
+    |> where([o, c], c.analysis_id == ^analysis_id)
+    |> order_by(asc: :inserted_at)
+    |> Repo.all()
+  end
+
+  @doc "All verdicts across an analysis's cases, for audit enrichment."
+  def list_verdicts_for_analysis(analysis_id) do
+    Verdict
+    |> join(:inner, [v], c in Case, on: v.tribunal_case_id == c.id)
+    |> where([v, c], c.analysis_id == ^analysis_id)
+    |> order_by(asc: :inserted_at)
+    |> Repo.all()
+  end
+
   def list_verdicts_for_case(tribunal_case_id) do
     Verdict
     |> where(tribunal_case_id: ^tribunal_case_id)
