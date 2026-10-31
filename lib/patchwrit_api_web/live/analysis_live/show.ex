@@ -73,6 +73,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
      |> assign(:finding_opinions, [])
      |> assign(:audit_events, [])
      |> assign(:audit_entries, [])
+     |> assign(:audit_groups, [])
      |> assign(:audit_summary, nil)
      |> assign(:queued_case_ids, MapSet.new())
      |> assign(:introduced_via, introduced_via_map(analysis))
@@ -82,6 +83,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
 
          socket
          |> assign(:audit_entries, entries)
+         |> assign(:audit_groups, audit_groups(entries))
          |> assign(:audit_summary, audit_summary(entries))
        else
          socket
@@ -120,6 +122,62 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
         story: audit_story(event, opinion, verdict)
       }
     end)
+  end
+
+  # One tribunal run = the events of a single case execution, from
+  # queue (or evidence collection) to a terminal event. A retried case
+  # starts a new run; the stream never merges two executions.
+  @audit_terminal_events ~w(tribunal_completed tribunal_failed tribunal_skipped tribunal_cancelled)
+
+  defp audit_groups(entries) do
+    {groups, _open} =
+      Enum.reduce(entries, {[], %{}}, fn entry, {groups, open} ->
+        case_id = entry.event.tribunal_case_id
+
+        {groups, index} =
+          if Map.has_key?(open, case_id) and entry.event.event != "case_created" do
+            {groups, Map.fetch!(open, case_id)}
+          else
+            {groups ++ [%{case: entry.case, finding: entry.finding, entries: []}], length(groups)}
+          end
+
+        groups =
+          List.update_at(groups, index, &%{&1 | entries: &1.entries ++ [entry]})
+
+        open =
+          if entry.event.event in @audit_terminal_events do
+            Map.delete(open, case_id)
+          else
+            Map.put(open, case_id, index)
+          end
+
+        {groups, open}
+      end)
+
+    groups
+    |> Enum.map(fn group ->
+      verdict_entry = Enum.find(group.entries, &(&1.event.event == "verdict_completed"))
+      failed? = Enum.any?(group.entries, &(&1.event.event == "tribunal_failed"))
+
+      outcome =
+        cond do
+          verdict_entry -> {:verdict, verdict_entry.event.metadata["recommendation"]}
+          failed? -> {:failed, nil}
+          true -> {:open, nil}
+        end
+
+      tokens =
+        group.entries
+        |> Enum.map(& &1.event.metadata["total_tokens"])
+        |> Enum.filter(&is_integer/1)
+        |> Enum.sum()
+
+      group
+      |> Map.put(:outcome, outcome)
+      |> Map.put(:tokens, tokens)
+      |> Map.put(:started_at, hd(group.entries).event.inserted_at)
+    end)
+    |> Enum.reverse()
   end
 
   defp audit_summary(entries) do
@@ -1375,25 +1433,51 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
             tribunal activity is recorded as it happens.
           </p>
 
-          <ol :if={@audit_entries != []} class="pw-audit-list">
-            <li :for={entry <- @audit_entries} class="pw-audit-item pw-audit-entry">
-              <div class="pw-audit-entry-head">
-                <span class="pw-audit-time">
-                  {Calendar.strftime(entry.event.inserted_at, "%Y-%m-%d %H:%M:%S")}
-                </span>
-                <strong class="pw-audit-headline">{entry.headline}</strong>
-                <span class="pw-audit-actor">{entry.event.actor}</span>
-                <.link
-                  :if={entry.finding}
-                  navigate={~p"/analyses/#{@analysis.id}/findings/#{entry.finding.id}"}
-                  class="pw-audit-case-link"
-                >
-                  {entry.finding.package_name}:{entry.finding.package_version}
-                </.link>
-              </div>
-              <p :if={entry.story != ""} class="pw-audit-story">{entry.story}</p>
-            </li>
-          </ol>
+          <div :if={@audit_groups != []} class="pw-audit-groups">
+            <section :for={group <- @audit_groups} class="pw-audit-group">
+              <header class="pw-audit-group-head">
+                <div>
+                  <.link
+                    :if={group.finding}
+                    navigate={~p"/analyses/#{@analysis.id}/findings/#{group.finding.id}"}
+                    class="pw-audit-group-title"
+                  >
+                    {group.finding.package_name}:{group.finding.package_version}
+                  </.link>
+                  <span :if={group.finding} class="pw-audit-group-sub">
+                    {group.finding.osv_id} · started {Calendar.strftime(
+                      group.started_at,
+                      "%Y-%m-%d %H:%M:%S"
+                    )}
+                  </span>
+                </div>
+                <div class="pw-audit-group-stats">
+                  <%= case group.outcome do %>
+                    <% {:verdict, recommendation} -> %>
+                      <.verdict_badge recommendation={recommendation} />
+                    <% {:failed, _} -> %>
+                      <span class="pw-badge pw-badge--failed">Failed</span>
+                    <% {:open, _} -> %>
+                      <span class="pw-badge pw-badge--running">In progress</span>
+                  <% end %>
+                  <span class="pw-audit-group-tokens">{number(group.tokens)} tokens</span>
+                </div>
+              </header>
+
+              <ol class="pw-audit-list">
+                <li :for={entry <- group.entries} class="pw-audit-item pw-audit-entry">
+                  <div class="pw-audit-entry-head">
+                    <span class="pw-audit-time">
+                      {Calendar.strftime(entry.event.inserted_at, "%H:%M:%S")}
+                    </span>
+                    <strong class="pw-audit-headline">{entry.headline}</strong>
+                    <span class="pw-audit-actor">{entry.event.actor}</span>
+                  </div>
+                  <p :if={entry.story != ""} class="pw-audit-story">{entry.story}</p>
+                </li>
+              </ol>
+            </section>
+          </div>
         </section>
 
         <section
