@@ -145,7 +145,9 @@ defmodule PatchwritApiWeb.AnalysisLiveTest do
     assert html =~ "org.apache.logging.log4j:log4j-core:2.14.1"
     assert html =~ "CVE-2021-44228"
     assert html =~ "fixed in 2.17.0"
-    assert html =~ "via com.example:app:1.0"
+    # Single-element introduction path: the project itself depends on it.
+    assert html =~ "Direct dependency"
+    refute html =~ "via com.example:app:1.0"
   end
 
   test "detail page distinguishes scanned-clean from not-yet-scanned", %{conn: conn} do

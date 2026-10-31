@@ -69,26 +69,43 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
        Map.new(findings, &{"#{&1.package_name}:#{&1.package_version}", &1.id})
      )
      |> assign(:finding_rows, rows)
-     |> assign(:expanded_finding_id, nil)
-     |> assign(:expanded_opinions, [])
+     |> assign(:finding_row, nil)
+     |> assign(:finding_opinions, [])
      |> assign(:queued_case_ids, MapSet.new())
      |> assign(:introduced_via, introduced_via_map(analysis))}
   end
 
+  # The finding detail page resolves its row in handle_params, where the
+  # finding_id route param is available alongside the tab params.
+
   @impl true
   def handle_params(params, _uri, socket) do
     socket =
-      case {socket.assigns.live_action, params["case"]} do
-        {:findings, finding_id} when is_binary(finding_id) ->
-          opinions =
-            case Enum.find(socket.assigns.finding_rows, &(&1.finding.id == finding_id)) do
-              %{case: %{id: case_id}} -> Tribunal.list_opinions_for_case(case_id)
-              _ -> []
-            end
+      case {socket.assigns.live_action, params["case"], params["finding_id"]} do
+        # Legacy ?case= deep links land on the finding's own page now.
+        {:findings, finding_id, _} when is_binary(finding_id) ->
+          push_navigate(socket,
+            to: ~p"/analyses/#{socket.assigns.analysis.id}/findings/#{finding_id}"
+          )
 
-          socket
-          |> assign(:expanded_finding_id, finding_id)
-          |> assign(:expanded_opinions, opinions)
+        {:finding, _, finding_id} when is_binary(finding_id) ->
+          case Enum.find(socket.assigns.finding_rows, &(&1.finding.id == finding_id)) do
+            nil ->
+              socket
+              |> put_flash(:error, "Finding not found on this run")
+              |> push_navigate(to: ~p"/analyses/#{socket.assigns.analysis.id}/findings")
+
+            row ->
+              opinions =
+                case row do
+                  %{case: %{id: case_id}} -> Tribunal.list_opinions_for_case(case_id)
+                  _ -> []
+                end
+
+              socket
+              |> assign(:finding_row, row)
+              |> assign(:finding_opinions, opinions)
+          end
 
         _ ->
           socket
@@ -129,26 +146,6 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
 
   def handle_event("select_deps_module", %{"module" => module}, socket) do
     {:noreply, assign(socket, deps_module: module)}
-  end
-
-  def handle_event("toggle_finding", %{"id" => finding_id}, socket) do
-    if socket.assigns.expanded_finding_id == finding_id do
-      {:noreply,
-       socket
-       |> assign(:expanded_finding_id, nil)
-       |> assign(:expanded_opinions, [])}
-    else
-      opinions =
-        case Enum.find(socket.assigns.finding_rows, &(&1.finding.id == finding_id)) do
-          %{case: %{id: case_id}} -> Tribunal.list_opinions_for_case(case_id)
-          _ -> []
-        end
-
-      {:noreply,
-       socket
-       |> assign(:expanded_finding_id, finding_id)
-       |> assign(:expanded_opinions, opinions)}
-    end
   end
 
   def handle_event("run_tribunal", %{"id" => case_id}, socket) do
@@ -216,11 +213,28 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
     end
   end
 
+  # The introduction path runs root -> ... -> immediate parent. A
+  # one-element path means the parent is the project itself: a direct
+  # dependency. Anything longer names the dependency that pulled it in.
   defp via_label(introduced_via, finding) do
     key = "#{finding.package_name}:#{finding.package_version}"
 
     case Map.get(introduced_via, key) do
-      [_ | _] = path -> "via #{List.last(path)}"
+      [_only] -> "Direct dependency"
+      [_ | _] = path -> "Pulled in by #{List.last(path)}"
+      _ -> nil
+    end
+  end
+
+  defp artifact_name(package_name) do
+    package_name |> String.split(":") |> List.last()
+  end
+
+  defp introduction_chain(introduced_via, finding) do
+    key = "#{finding.package_name}:#{finding.package_version}"
+
+    case Map.get(introduced_via, key) do
+      [_ | _] = path -> Enum.join(path ++ [key], " → ")
       _ -> nil
     end
   end
@@ -490,6 +504,114 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
     """
   end
 
+  attr :row, :map, required: true
+  attr :opinions, :list, default: []
+  attr :queued, :boolean, default: false
+
+  # The full tribunal case for one finding: verdict dimensions, both
+  # arguments with evidence, the dossier, and measured spend.
+  defp case_panel(assigns) do
+    ~H"""
+    <%= cond do %>
+      <% @row.verdict -> %>
+        <div class="pw-case-panel">
+          <div :if={@row.verdict.policy_capped} class="pw-policy-banner">
+            <strong>POLICY OVERRIDE — HUMAN REVIEW REQUIRED</strong>
+            <span :for={note <- @row.verdict.policy_notes}>{note}</span>
+            <span>
+              Judge proposed: {recommendation_label(@row.verdict.judge_recommendation)}
+            </span>
+          </div>
+
+          <div class="pw-dimension-grid">
+            <div class="pw-dimension">
+              <span>Presence</span><strong>{@row.verdict.presence}</strong>
+            </div>
+            <div class="pw-dimension">
+              <span>Application relevance</span>
+              <strong>{@row.verdict.application_relevance}</strong>
+            </div>
+            <div class="pw-dimension">
+              <span>Exploitability</span><strong>{@row.verdict.exploitability}</strong>
+            </div>
+            <div class="pw-dimension">
+              <span>Priority</span><strong>{@row.verdict.priority}</strong>
+            </div>
+            <div class="pw-dimension">
+              <span>Recommendation</span>
+              <strong>{recommendation_label(@row.verdict.recommendation)}</strong>
+            </div>
+          </div>
+
+          <h3>Judge rationale</h3>
+          <p class="pw-rationale">{@row.verdict.rationale}</p>
+
+          <div class="pw-argument-grid">
+            <div :for={role <- ["prosecutor", "defender"]} class="pw-argument-panel">
+              <h3>{String.capitalize(role)}</h3>
+              <%= cond do %>
+                <% opinion = latest_opinion(@opinions, role, "completed") -> %>
+                  <p>{opinion.summary}</p>
+                  <div class="pw-chip-row">
+                    <span :for={argument <- opinion.arguments} class="pw-chip-group">
+                      <span
+                        :for={evidence_id <- argument["evidence_ids"]}
+                        class="pw-evidence-chip"
+                      >
+                        {evidence_id}
+                      </span>
+                    </span>
+                  </div>
+                  <p :if={opinion.uncertainties != []} class="pw-uncertainties">
+                    Uncertainties: {Enum.join(opinion.uncertainties, "; ")}
+                  </p>
+                <% opinion = latest_opinion(@opinions, role, "failed") -> %>
+                  <p class="pw-failed-note">
+                    Opinion failed: {opinion.error}
+                  </p>
+                <% true -> %>
+                  <p class="pw-muted">No opinion recorded.</p>
+              <% end %>
+            </div>
+          </div>
+
+          <.case_dossier case={@row.case} />
+          <p class="pw-spend">
+            Judge model: {@row.verdict.model} · {case_tokens(@opinions, @row.verdict)} tokens measured for this case (advocates + judge)
+          </p>
+        </div>
+      <% @row.case -> %>
+        <div class="pw-case-panel">
+          <p :if={@row.failed} class="pw-failed-note">
+            The tribunal attempted this case and failed. The failure is
+            recorded on the case; re-running reuses any completed stages.
+          </p>
+          <p :if={!@row.failed} class="pw-rationale">
+            Evidence ready. This case has not been argued yet. {triage_reason(@row.case)}
+          </p>
+          <span :if={@queued} class="pw-badge pw-badge--running">Queued</span>
+          <button
+            :if={!@queued}
+            type="button"
+            class="pw-run-button"
+            phx-click="run_tribunal"
+            phx-value-id={@row.case.id}
+          >
+            {if @row.failed, do: "Re-run tribunal", else: "Run tribunal"}
+          </button>
+          <.case_dossier case={@row.case} />
+        </div>
+      <% true -> %>
+        <div class="pw-case-panel">
+          <p class="pw-rationale">
+            No dossier yet — the Investigator has not built a case for this
+            finding. Cases are built automatically after the OSV scan.
+          </p>
+        </div>
+    <% end %>
+    """
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -514,7 +636,10 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           </.link>
           <.link
             navigate={~p"/analyses/#{@analysis.id}/findings"}
-            class={["pw-run-tab", @live_action == :findings && "pw-run-tab--active"]}
+            class={[
+              "pw-run-tab",
+              @live_action in [:findings, :finding] && "pw-run-tab--active"
+            ]}
           >
             Findings ({length(@findings)})
           </.link>
@@ -790,9 +915,11 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
                 <%= for row <- @finding_rows do %>
                   <tr>
                     <td data-label="Package">
-                      <span class="pw-mono">
+                      <span class="pw-artifact">{artifact_name(row.finding.package_name)}</span>
+                      <span class="pw-version">{row.finding.package_version}</span>
+                      <div class="pw-repo-sub pw-mono">
                         {row.finding.package_name}:{row.finding.package_version}
-                      </span>
+                      </div>
                       <div :if={row.finding.summary} class="pw-repo-sub">{row.finding.summary}</div>
                       <div :if={via_label(@introduced_via, row.finding)} class="pw-repo-sub">
                         {via_label(@introduced_via, row.finding)}
@@ -816,8 +943,10 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
                     <td data-label="Tribunal status">
                       <%= cond do %>
                         <% row.verdict -> %>
-                          <.policy_capped_badge verdict={row.verdict} />
-                          <.verdict_badge recommendation={row.verdict.recommendation} />
+                          <div class="pw-status-cell">
+                            <.verdict_badge recommendation={row.verdict.recommendation} />
+                            <.policy_capped_badge verdict={row.verdict} />
+                          </div>
                         <% MapSet.member?(@queued_case_ids, row.case && row.case.id) -> %>
                           <span class="pw-badge pw-badge--running">Queued</span>
                         <% row.failed -> %>
@@ -829,132 +958,89 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
                       <% end %>
                     </td>
                     <td>
-                      <button
-                        type="button"
+                      <.link
+                        navigate={~p"/analyses/#{@analysis.id}/findings/#{row.finding.id}"}
                         class="pw-expand-button"
-                        phx-click="toggle_finding"
-                        phx-value-id={row.finding.id}
                       >
-                        {if @expanded_finding_id == row.finding.id, do: "Hide", else: "Details"}
-                      </button>
-                    </td>
-                  </tr>
-                  <tr :if={@expanded_finding_id == row.finding.id}>
-                    <td colspan="6" class="pw-case-cell">
-                      <%= cond do %>
-                        <% row.verdict -> %>
-                          <div class="pw-case-panel">
-                            <div :if={row.verdict.policy_capped} class="pw-policy-banner">
-                              <strong>POLICY OVERRIDE — HUMAN REVIEW REQUIRED</strong>
-                              <span :for={note <- row.verdict.policy_notes}>{note}</span>
-                              <span>
-                                Judge proposed: {recommendation_label(
-                                  row.verdict.judge_recommendation
-                                )}
-                              </span>
-                            </div>
-
-                            <div class="pw-dimension-grid">
-                              <div class="pw-dimension">
-                                <span>Presence</span><strong>{row.verdict.presence}</strong>
-                              </div>
-                              <div class="pw-dimension">
-                                <span>Application relevance</span>
-                                <strong>{row.verdict.application_relevance}</strong>
-                              </div>
-                              <div class="pw-dimension">
-                                <span>Exploitability</span><strong>{row.verdict.exploitability}</strong>
-                              </div>
-                              <div class="pw-dimension">
-                                <span>Priority</span><strong>{row.verdict.priority}</strong>
-                              </div>
-                              <div class="pw-dimension">
-                                <span>Recommendation</span>
-                                <strong>{recommendation_label(row.verdict.recommendation)}</strong>
-                              </div>
-                            </div>
-
-                            <h3>Judge rationale</h3>
-                            <p class="pw-rationale">{row.verdict.rationale}</p>
-
-                            <div class="pw-argument-grid">
-                              <div
-                                :for={role <- ["prosecutor", "defender"]}
-                                class="pw-argument-panel"
-                              >
-                                <h3>{String.capitalize(role)}</h3>
-                                <%= cond do %>
-                                  <% opinion = latest_opinion(@expanded_opinions, role, "completed") -> %>
-                                    <p>{opinion.summary}</p>
-                                    <div class="pw-chip-row">
-                                      <span
-                                        :for={argument <- opinion.arguments}
-                                        class="pw-chip-group"
-                                      >
-                                        <span
-                                          :for={evidence_id <- argument["evidence_ids"]}
-                                          class="pw-evidence-chip"
-                                        >
-                                          {evidence_id}
-                                        </span>
-                                      </span>
-                                    </div>
-                                    <p :if={opinion.uncertainties != []} class="pw-uncertainties">
-                                      Uncertainties: {Enum.join(opinion.uncertainties, "; ")}
-                                    </p>
-                                  <% opinion = latest_opinion(@expanded_opinions, role, "failed") -> %>
-                                    <p class="pw-failed-note">
-                                      Opinion failed: {opinion.error}
-                                    </p>
-                                  <% true -> %>
-                                    <p class="pw-muted">No opinion recorded.</p>
-                                <% end %>
-                              </div>
-                            </div>
-
-                            <.case_dossier case={row.case} />
-                            <p class="pw-spend">
-                              Judge model: {row.verdict.model} · {case_tokens(
-                                @expanded_opinions,
-                                row.verdict
-                              )} tokens measured for this case (advocates + judge)
-                            </p>
-                          </div>
-                        <% row.case -> %>
-                          <div class="pw-case-panel">
-                            <p :if={row.failed} class="pw-failed-note">
-                              The tribunal attempted this case and failed. The failure is
-                              recorded on the case; re-running reuses any completed stages.
-                            </p>
-                            <p :if={!row.failed} class="pw-rationale">
-                              Evidence ready. This case has not been argued yet. {triage_reason(
-                                row.case
-                              )}
-                            </p>
-                            <button
-                              type="button"
-                              class="pw-run-button"
-                              phx-click="run_tribunal"
-                              phx-value-id={row.case.id}
-                            >
-                              {if row.failed, do: "Re-run tribunal", else: "Run tribunal"}
-                            </button>
-                            <.case_dossier case={row.case} />
-                          </div>
-                        <% true -> %>
-                          <div class="pw-case-panel">
-                            <p class="pw-rationale">
-                              No dossier yet — the Investigator has not built a case for this
-                              finding. Cases are built automatically after the OSV scan.
-                            </p>
-                          </div>
-                      <% end %>
+                        View case
+                      </.link>
                     </td>
                   </tr>
                 <% end %>
               </tbody>
             </table>
           </div>
+        </section>
+
+        <section :if={@live_action == :finding && @finding_row} class="pw-result">
+          <.link navigate={~p"/analyses/#{@analysis.id}/findings"} class="pw-back-link">
+            ← Back to findings
+          </.link>
+          <div class="pw-result-head">
+            <div>
+              <span class="pw-panel-kicker">Finding</span>
+              <h2>
+                {artifact_name(@finding_row.finding.package_name)} {@finding_row.finding.package_version}
+              </h2>
+            </div>
+            <div :if={@finding_row.verdict} class="pw-status-cell">
+              <.verdict_badge recommendation={@finding_row.verdict.recommendation} />
+              <.policy_capped_badge verdict={@finding_row.verdict} />
+            </div>
+          </div>
+
+          <dl class="pw-detail-grid">
+            <div class="pw-detail-item">
+              <dt>Package</dt>
+              <dd class="pw-mono">
+                {@finding_row.finding.package_name}:{@finding_row.finding.package_version}
+              </dd>
+            </div>
+            <div class="pw-detail-item">
+              <dt>Advisory</dt>
+              <dd class="pw-mono">
+                {@finding_row.finding.osv_id}
+                <span :for={alias_name <- @finding_row.finding.aliases}><br />{alias_name}</span>
+              </dd>
+            </div>
+            <div class="pw-detail-item">
+              <dt>Severity</dt>
+              <dd>{@finding_row.finding.severity || "not reported"}</dd>
+            </div>
+            <div class="pw-detail-item">
+              <dt>Fix</dt>
+              <dd>
+                {if @finding_row.finding.fixed_versions == [],
+                  do: "no fix published",
+                  else: "fixed in #{Enum.join(@finding_row.finding.fixed_versions, ", ")}"}
+              </dd>
+            </div>
+            <div :if={@finding_row.finding.summary} class="pw-detail-item">
+              <dt>Summary</dt>
+              <dd>{@finding_row.finding.summary}</dd>
+            </div>
+            <div
+              :if={introduction_chain(@introduced_via, @finding_row.finding)}
+              class="pw-detail-item"
+            >
+              <dt>How it got in</dt>
+              <dd class="pw-mono">{introduction_chain(@introduced_via, @finding_row.finding)}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section :if={@live_action == :finding && @finding_row} class="pw-result">
+          <div class="pw-result-head">
+            <div>
+              <span class="pw-panel-kicker">Tribunal</span>
+              <h2>Case</h2>
+            </div>
+          </div>
+          <.case_panel
+            row={@finding_row}
+            opinions={@finding_opinions}
+            queued={MapSet.member?(@queued_case_ids, @finding_row.case && @finding_row.case.id)}
+          />
         </section>
 
         <section

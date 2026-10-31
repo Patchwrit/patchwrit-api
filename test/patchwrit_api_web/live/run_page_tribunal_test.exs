@@ -93,17 +93,20 @@ defmodule PatchwritApiWeb.RunPageTribunalTest do
       })
   end
 
-  test "judged finding expands into verdict, arguments, dossier, and spend", %{conn: conn} do
+  test "judged finding page shows verdict, arguments, dossier, and spend", %{conn: conn} do
     {analysis, finding, case_record} = seed_analysis()
     judge_case(case_record)
 
-    {:ok, view, html} = live(conn, "/analyses/#{analysis.id}/findings")
+    {:ok, _view, html} = live(conn, "/analyses/#{analysis.id}/findings")
     assert html =~ "Needs human review"
+    assert html =~ "View case"
+    # The case itself no longer expands inside the table, and the old
+    # duplicate policy pill is gone.
+    refute html =~ "POLICY OVERRIDE — HUMAN REVIEW REQUIRED"
+    refute html =~ "Policy: human review"
+    assert html =~ "policy-capped"
 
-    html =
-      view
-      |> element("button[phx-click='toggle_finding'][phx-value-id='#{finding.id}']")
-      |> render_click()
+    {:ok, _view, html} = live(conn, "/analyses/#{analysis.id}/findings/#{finding.id}")
 
     assert html =~ "POLICY OVERRIDE — HUMAN REVIEW REQUIRED"
     assert html =~ "Judge proposed: Investigate usage"
@@ -114,15 +117,10 @@ defmodule PatchwritApiWeb.RunPageTribunalTest do
     assert html =~ "450 tokens measured"
   end
 
-  test "not-judged finding expands to the reason and a Run tribunal action", %{conn: conn} do
+  test "not-judged finding page shows the reason and a Run tribunal action", %{conn: conn} do
     {analysis, finding, case_record} = seed_analysis()
 
-    {:ok, view, _html} = live(conn, "/analyses/#{analysis.id}/findings")
-
-    html =
-      view
-      |> element("button[phx-click='toggle_finding'][phx-value-id='#{finding.id}']")
-      |> render_click()
+    {:ok, view, html} = live(conn, "/analyses/#{analysis.id}/findings/#{finding.id}")
 
     assert html =~ "has not been argued yet"
     assert html =~ "Selected by triage"
@@ -135,11 +133,16 @@ defmodule PatchwritApiWeb.RunPageTribunalTest do
     assert render(view) =~ "Queued"
   end
 
-  test "deep link opens the case expanded", %{conn: conn} do
+  test "deep link opens the finding's own page", %{conn: conn} do
     {analysis, finding, case_record} = seed_analysis()
     judge_case(case_record)
 
-    {:ok, _view, html} = live(conn, "/analyses/#{analysis.id}/findings?case=#{finding.id}")
+    assert {:error, {:live_redirect, %{to: to}}} =
+             live(conn, "/analyses/#{analysis.id}/findings?case=#{finding.id}")
+
+    assert to == "/analyses/#{analysis.id}/findings/#{finding.id}"
+
+    {:ok, _view, html} = live(conn, to)
     assert html =~ "POLICY OVERRIDE — HUMAN REVIEW REQUIRED"
     assert html =~ "Presence is proven; exploitability is not established."
   end
