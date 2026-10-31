@@ -152,6 +152,37 @@ defmodule PatchwritApiWeb.AuditTabTest do
     # Each entry links back to its finding's case page.
     assert html =~ "org.apache.logging.log4j:log4j-core:2.14.1"
     assert html =~ "/findings/"
+
+    # The run is one card with an outcome and its token total.
+    assert html =~ "pw-audit-group"
+    assert html =~ "10,000 tokens"
+  end
+
+  test "separate runs of the same case are separate cards", %{conn: conn} do
+    {analysis, case_record} = seed_judged_case()
+
+    # Close the seeded run, then a second run that fails.
+    Tribunal.record_audit_event(case_record, "tribunal_completed", "system", %{
+      "recommendation" => "needs_human_review"
+    })
+
+    Tribunal.record_audit_event(case_record, "tribunal_queued", "operator", %{
+      "source" => "manual"
+    })
+
+    Tribunal.record_audit_event(case_record, "tribunal_started", "system", %{})
+
+    Tribunal.record_audit_event(case_record, "tribunal_failed", "system", %{
+      "stage" => "prosecutor",
+      "error" => "model timeout"
+    })
+
+    {:ok, _view, html} = live(conn, "/analyses/#{analysis.id}/audit")
+
+    assert html |> String.split("pw-audit-group\"") |> length() == 3
+    assert html =~ "Tribunal failed"
+    assert html =~ "model timeout"
+    assert html =~ "Failed"
   end
 
   test "run tabs include Audit alongside the other sections", %{conn: conn} do
