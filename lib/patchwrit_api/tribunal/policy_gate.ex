@@ -12,6 +12,13 @@ defmodule PatchwritApi.Tribunal.PolicyGate do
   grants no permission to automate a change.
   """
 
+  # Bump on ANY rule or note change: verdicts stamp the version that
+  # judged them, so historical decisions stay attributable after the
+  # policy evolves.
+  @version "policy_v1"
+
+  def version, do: @version
+
   @cap "needs_human_review"
   @note "dependency graph incomplete or unknown; recommendation capped at needs_human_review (incomplete evidence, not a safety finding)"
 

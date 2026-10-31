@@ -182,8 +182,18 @@ defmodule PatchwritApi.Tribunal.JudgeTest do
     # The gate, not the model, has the final word.
     assert verdict.recommendation == "needs_human_review"
     assert verdict.policy_capped == true
+    assert verdict.policy_version == "policy_v1"
     assert verdict.usage["total_tokens"] == 99
     assert Tribunal.get_case(case_record.id).status == "verdict_ready"
+
+    # Audit: judgment and the gate's intervention are separate events.
+    events = Tribunal.list_audit_events_for_case(case_record.id)
+    assert Enum.any?(events, &(&1.event == "verdict_completed" and &1.actor == "judge"))
+    policy_event = Enum.find(events, &(&1.event == "policy_applied"))
+    assert policy_event.actor == "policy_gate"
+    assert policy_event.metadata["policy_version"] == "policy_v1"
+    assert policy_event.metadata["judge_recommendation"] == "remediate_now"
+    assert policy_event.metadata["recommendation"] == "needs_human_review"
   end
 
   test "judge verdict stands when the graph is explicitly complete" do

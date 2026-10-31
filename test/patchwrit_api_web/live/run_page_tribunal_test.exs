@@ -108,6 +108,7 @@ defmodule PatchwritApiWeb.RunPageTribunalTest do
 
     {:ok, _view, html} = live(conn, "/analyses/#{analysis.id}/findings/#{finding.id}")
 
+    assert html =~ "Timeline"
     assert html =~ "POLICY OVERRIDE — HUMAN REVIEW REQUIRED"
     assert html =~ "Judge proposed: Investigate usage"
     assert html =~ "Presence is proven; exploitability is not established."

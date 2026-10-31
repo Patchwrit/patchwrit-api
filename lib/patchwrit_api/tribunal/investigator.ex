@@ -90,7 +90,17 @@ defmodule PatchwritApi.Tribunal.Investigator do
         }
       end)
 
-    Tribunal.replace_cases(analysis, case_attrs)
+    {:ok, cases} = Tribunal.replace_cases(analysis, case_attrs)
+
+    Enum.each(cases, fn case_record ->
+      Tribunal.record_audit_event(case_record, "case_created", "investigator", %{
+        "finding_id" => case_record.finding_id,
+        "snapshot_hash" => case_record.snapshot_hash,
+        "dossier_version" => case_record.dossier_version
+      })
+    end)
+
+    {:ok, cases}
   end
 
   @doc "Stable SHA-256 fingerprint of a dossier packet."
