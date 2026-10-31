@@ -95,10 +95,13 @@ defmodule PatchwritApi.Tribunal.AdvocatesTest do
     Req.Test.stub(@stub, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
       payload = Jason.decode!(body)
-      system = hd(payload["messages"])["content"]
+
+      text =
+        (payload["instructions"] || "") <>
+          Enum.map_join(payload["input"] || [], "\n", & &1["content"])
 
       role =
-        if String.contains?(system, "You are the Prosecutor"), do: "prosecutor", else: "defender"
+        if String.contains?(text, "YOUR ROLE: DEFENDER"), do: "defender", else: "prosecutor"
 
       send(parent, {:advocate_request, role, payload})
 
@@ -130,8 +133,10 @@ defmodule PatchwritApi.Tribunal.AdvocatesTest do
 
       Req.Test.json(conn, %{
         "model" => "muse-spark-1.3",
-        "choices" => [%{"message" => %{"role" => "assistant", "content" => content}}],
-        "usage" => %{"total_tokens" => 42}
+        "output" => [
+          %{"type" => "message", "content" => [%{"type" => "output_text", "text" => content}]}
+        ],
+        "usage" => %{"input_tokens" => 40, "output_tokens" => 2, "total_tokens" => 42}
       })
     end)
   end
@@ -162,7 +167,7 @@ defmodule PatchwritApi.Tribunal.AdvocatesTest do
 
     # The Defender saw the Prosecutor's validated summary.
     assert_received {:advocate_request, "defender", defender_payload}
-    user_content = List.last(defender_payload["messages"])["content"]
+    user_content = List.last(defender_payload["input"])["content"]
     assert user_content =~ "PROSECUTOR OPINION"
     assert user_content =~ "Urgent: a directly reachable-era log4j"
   end
