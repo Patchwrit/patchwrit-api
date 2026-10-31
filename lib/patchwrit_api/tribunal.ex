@@ -33,6 +33,30 @@ defmodule PatchwritApi.Tribunal do
     |> Repo.update()
   end
 
+  @doc """
+  Case IDs (within one analysis) that have a failed opinion or verdict
+  and no completed verdict — the tribunal tried and something failed.
+  """
+  def failed_case_ids(analysis_id) do
+    failed_verdicts =
+      Verdict
+      |> join(:inner, [v], c in Case, on: v.tribunal_case_id == c.id)
+      |> where([v, c], c.analysis_id == ^analysis_id and v.status == "failed")
+      |> select([v], v.tribunal_case_id)
+      |> Repo.all()
+
+    failed_opinions =
+      Opinion
+      |> join(:inner, [o], c in Case, on: o.tribunal_case_id == c.id)
+      |> where([o, c], c.analysis_id == ^analysis_id and o.status == "failed")
+      |> select([o], o.tribunal_case_id)
+      |> Repo.all()
+
+    completed = Map.keys(latest_verdicts_for_analysis(analysis_id))
+
+    MapSet.new(failed_verdicts ++ (failed_opinions -- completed))
+  end
+
   @doc "Persists one advocate opinion (completed or failed) for a case."
   def create_opinion(attrs) do
     %Opinion{}

@@ -1114,6 +1114,74 @@ body.patchwrit .pw-tab--active {
 .pw-dep-detail {
   text-align: left;
   white-space: normal;
+/* -- Tribunal case panel ------------------------------------------------- */
+
+.pw-case-cell {
+  background: var(--pw-panel-subtle);
+}
+
+.pw-case-panel {
+  display: grid;
+  gap: 16px;
+  padding: 8px 4px;
+  text-align: left;
+  white-space: normal;
+}
+
+.pw-case-panel h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.pw-dimension-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  background: var(--pw-line);
+  border: 1px solid var(--pw-line);
+  border-radius: 8px;
+}
+
+.pw-dimension {
+  padding: 13px;
+  background: var(--pw-panel);
+}
+
+.pw-dimension span {
+  display: block;
+  color: var(--pw-muted);
+  font-family: var(--pw-mono);
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.pw-dimension strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.pw-rationale {
+  margin: 0;
+  color: var(--pw-ink-soft);
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+
+.pw-argument-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.pw-argument-panel {
+  padding: 16px;
+  background: var(--pw-panel);
+  border: 1px solid var(--pw-line);
+  border-radius: 8px;
   color: var(--pw-ink-soft);
   font-size: 13.5px;
   line-height: 1.6;
@@ -1148,4 +1216,75 @@ body.patchwrit .pw-tab--active {
 .pw-sbom-summary a {
   margin-left: auto;
   text-decoration: none;
+.pw-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.pw-chip-group {
+  display: contents;
+}
+
+.pw-evidence-chip {
+  padding: 3px 8px;
+  background: var(--pw-panel-inset);
+  border-radius: 999px;
+  font-family: var(--pw-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pw-uncertainties {
+  margin: 10px 0 0;
+  color: var(--pw-muted);
+  font-size: 12.5px;
+}
+
+.pw-failed-note {
+  margin: 0;
+  color: var(--pw-danger-text);
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.pw-dossier summary {
+  cursor: pointer;
+  color: var(--pw-ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.pw-dossier .pw-detail-grid {
+  margin-top: 12px;
+}
+
+.pw-spend {
+  margin: 0;
+  color: var(--pw-muted);
+  font-family: var(--pw-mono);
+  font-size: 12px;
+}
+
+body.patchwrit .pw-expand-button {
+  padding: 7px 11px;
+  background: var(--pw-panel);
+  border: 1px solid var(--pw-field-line);
+  border-radius: 6px;
+  color: var(--pw-ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+@media (max-width: 900px) {
+  .pw-dimension-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pw-argument-grid {
+    grid-template-columns: 1fr;
+  }
 }
