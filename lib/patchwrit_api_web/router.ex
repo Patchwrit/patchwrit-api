@@ -42,6 +42,7 @@ defmodule PatchwritApiWeb.Router do
     live "/analyses", AnalysisLive.Index
     live "/analyses/:id", AnalysisLive.Show, :overview
     live "/analyses/:id/findings", AnalysisLive.Show, :findings
+    live "/analyses/:id/findings/:finding_id", AnalysisLive.Show, :finding
     live "/analyses/:id/dependencies", AnalysisLive.Show, :dependencies
     get "/analyses/:id/sbom", SbomController, :download
     live "/repositories", RepositoryLive.Index
