@@ -113,6 +113,22 @@ defmodule PatchwritApi.Workers.RunTribunalCaseTest do
     assert verdict.status == "completed"
     assert Tribunal.get_case(case_record.id).status == "verdict_ready"
 
+    # The whole run is on the audit trail, in order.
+    event_names =
+      case_record.id
+      |> Tribunal.list_audit_events_for_case()
+      |> Enum.map(& &1.event)
+
+    assert event_names == [
+             "case_created",
+             "tribunal_started",
+             "opinion_completed",
+             "opinion_completed",
+             "verdict_completed",
+             "policy_applied",
+             "tribunal_completed"
+           ]
+
     # Idempotent: a duplicate job must not re-argue or re-judge.
     assert :ok = RunTribunalCase.perform(job)
     assert length(Tribunal.list_opinions_for_case(case_record.id)) == 2

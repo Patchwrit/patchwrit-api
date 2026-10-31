@@ -65,6 +65,7 @@ defmodule PatchwritApi.Tribunal.Advocates do
         case parse_and_validate(content, allowed_ids) do
           {:ok, opinion} ->
             persist(
+              case_record,
               Map.merge(base, %{
                 "status" => "completed",
                 "summary" => opinion.summary,
@@ -77,22 +78,38 @@ defmodule PatchwritApi.Tribunal.Advocates do
             )
 
           {:error, message} ->
-            persist_failed(base, message, content, usage)
+            persist_failed(case_record, base, message, content, usage)
         end
 
       {:error, message} ->
-        persist_failed(base, message, nil, %{})
+        persist_failed(case_record, base, message, nil, %{})
     end
   end
 
-  defp persist(attrs) do
+  defp persist(case_record, attrs) do
     case Tribunal.create_opinion(attrs) do
-      {:ok, opinion} -> {:ok, opinion}
-      {:error, changeset} -> {:error, "could not persist opinion: #{inspect(changeset.errors)}"}
+      {:ok, opinion} ->
+        Tribunal.record_audit_event(
+          case_record,
+          "opinion_completed",
+          opinion.role,
+          Map.merge(Tribunal.usage_summary(opinion.usage), %{
+            "opinion_id" => opinion.id,
+            "model" => opinion.model,
+            "prompt_version" => opinion.prompt_version,
+            "snapshot_hash" => opinion.snapshot_hash,
+            "citations" => opinion.citations
+          })
+        )
+
+        {:ok, opinion}
+
+      {:error, changeset} ->
+        {:error, "could not persist opinion: #{inspect(changeset.errors)}"}
     end
   end
 
-  defp persist_failed(base, message, raw_content, usage) do
+  defp persist_failed(case_record, base, message, raw_content, usage) do
     attrs =
       Map.merge(base, %{
         "status" => "failed",
@@ -102,8 +119,19 @@ defmodule PatchwritApi.Tribunal.Advocates do
       })
 
     case Tribunal.create_opinion(attrs) do
-      {:ok, opinion} -> {:error, opinion}
-      {:error, changeset} -> {:error, "could not persist opinion: #{inspect(changeset.errors)}"}
+      {:ok, opinion} ->
+        Tribunal.record_audit_event(case_record, "opinion_failed", opinion.role, %{
+          "opinion_id" => opinion.id,
+          "error" => message,
+          "model" => opinion.model,
+          "prompt_version" => opinion.prompt_version,
+          "snapshot_hash" => opinion.snapshot_hash
+        })
+
+        {:error, opinion}
+
+      {:error, changeset} ->
+        {:error, "could not persist opinion: #{inspect(changeset.errors)}"}
     end
   end
 

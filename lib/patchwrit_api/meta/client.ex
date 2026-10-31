@@ -46,6 +46,20 @@ defmodule PatchwritApi.Meta.Client do
     Keyword.get(config(), :judge_model, @default_judge_model)
   end
 
+  @doc "Prompt-cache retention hint sent with every call."
+  def cache_retention do
+    Keyword.get(config(), :prompt_cache_retention, @default_cache_retention)
+  end
+
+  @doc "The effective model configuration, for audit records."
+  def config_snapshot do
+    %{
+      "advocate_model" => advocate_model(),
+      "judge_model" => judge_model(),
+      "prompt_cache_retention" => cache_retention()
+    }
+  end
+
   @doc """
   Runs one completion. `messages` is a list of
   `%{"role" => ..., "content" => ...}` maps (atom keys accepted):

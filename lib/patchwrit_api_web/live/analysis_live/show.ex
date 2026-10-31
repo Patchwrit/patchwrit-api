@@ -71,6 +71,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
      |> assign(:finding_rows, rows)
      |> assign(:finding_row, nil)
      |> assign(:finding_opinions, [])
+     |> assign(:audit_events, [])
      |> assign(:queued_case_ids, MapSet.new())
      |> assign(:introduced_via, introduced_via_map(analysis))}
   end
@@ -102,9 +103,16 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
                   _ -> []
                 end
 
+              audit_events =
+                case row do
+                  %{case: %{id: case_id}} -> Tribunal.list_audit_events_for_case(case_id)
+                  _ -> []
+                end
+
               socket
               |> assign(:finding_row, row)
               |> assign(:finding_opinions, opinions)
+              |> assign(:audit_events, audit_events)
           end
 
         _ ->
@@ -225,6 +233,37 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
       _ -> nil
     end
   end
+
+  # Compact one-line summary of an audit event's metadata for the
+  # timeline: model/versions, token counts, outcome, duration.
+  defp audit_detail(%{metadata: metadata}) do
+    parts =
+      []
+      |> add_part(metadata["model"])
+      |> add_part(metadata["prompt_version"])
+      |> add_part(metadata["policy_version"])
+      |> add_part(audit_tokens_part(metadata))
+      |> add_part(metadata["recommendation"] && "→ #{metadata["recommendation"]}")
+      |> add_part(metadata["duration_ms"] && "#{metadata["duration_ms"]} ms")
+      |> add_part(metadata["source"] && "via #{metadata["source"]}")
+      |> add_part(metadata["error"])
+
+    Enum.join(parts, " · ")
+  end
+
+  defp audit_tokens_part(%{"total_tokens" => total} = metadata) do
+    cached = if metadata["cached_tokens"], do: ", #{metadata["cached_tokens"]} cached", else: ""
+
+    reasoning =
+      if metadata["reasoning_tokens"], do: ", #{metadata["reasoning_tokens"]} reasoning", else: ""
+
+    "#{total} tokens#{cached}#{reasoning}"
+  end
+
+  defp audit_tokens_part(_metadata), do: nil
+
+  defp add_part(parts, nil), do: parts
+  defp add_part(parts, part), do: parts ++ [part]
 
   defp artifact_name(package_name) do
     package_name |> String.split(":") |> List.last()
@@ -1041,6 +1080,33 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
             opinions={@finding_opinions}
             queued={MapSet.member?(@queued_case_ids, @finding_row.case && @finding_row.case.id)}
           />
+        </section>
+
+        <section :if={@live_action == :finding && @finding_row} class="pw-result">
+          <div class="pw-result-head">
+            <div>
+              <span class="pw-panel-kicker">Audit</span>
+              <h2>Timeline</h2>
+            </div>
+            <p>Every recorded decision on this case, in order.</p>
+          </div>
+          <p :if={@audit_events == []} class="pw-muted">
+            No audit events recorded for this case yet. Cases investigated or
+            judged before the audit trail existed have no timeline; new
+            activity is recorded as it happens.
+          </p>
+          <ol :if={@audit_events != []} class="pw-audit-list">
+            <li :for={event <- @audit_events} class="pw-audit-item">
+              <span class="pw-audit-time">
+                {Calendar.strftime(event.inserted_at, "%Y-%m-%d %H:%M:%S")}
+              </span>
+              <span class="pw-audit-event">{event.event}</span>
+              <span class="pw-audit-actor">{event.actor}</span>
+              <span :if={audit_detail(event) != ""} class="pw-audit-detail">
+                {audit_detail(event)}
+              </span>
+            </li>
+          </ol>
         </section>
 
         <section

@@ -50,11 +50,18 @@ defmodule PatchwritApi.Tribunal.Judge do
       "tribunal_case_id" => case_record.id,
       "model" => model,
       "prompt_version" => @prompt_version,
+      "policy_version" => PolicyGate.version(),
       "snapshot_hash" => hash
     }
 
     if allowed_ids == [] do
-      persist_failed(base, "dossier has no evidence index; nothing is citable", nil, %{})
+      persist_failed(
+        case_record,
+        base,
+        "dossier has no evidence index; nothing is citable",
+        nil,
+        %{}
+      )
     else
       messages = build_messages(dossier, allowed_ids, prosecutor, defender)
 
@@ -88,6 +95,7 @@ defmodule PatchwritApi.Tribunal.Judge do
 
               case persist(attrs) do
                 {:ok, verdict} ->
+                  audit_verdict(case_record, verdict)
                   Tribunal.update_case_status(case_record, "verdict_ready")
                   {:ok, verdict}
 
@@ -96,11 +104,11 @@ defmodule PatchwritApi.Tribunal.Judge do
               end
 
             {:error, message} ->
-              persist_failed(base, message, content, usage)
+              persist_failed(case_record, base, message, content, usage)
           end
 
         {:error, message} ->
-          persist_failed(base, message, nil, %{})
+          persist_failed(case_record, base, message, nil, %{})
       end
     end
   end
@@ -119,7 +127,7 @@ defmodule PatchwritApi.Tribunal.Judge do
     end
   end
 
-  defp persist_failed(base, message, raw_content, usage) do
+  defp persist_failed(case_record, base, message, raw_content, usage) do
     attrs =
       Map.merge(base, %{
         "status" => "failed",
@@ -129,9 +137,52 @@ defmodule PatchwritApi.Tribunal.Judge do
       })
 
     case Tribunal.create_verdict(attrs) do
-      {:ok, verdict} -> {:error, verdict}
-      {:error, changeset} -> {:error, "could not persist verdict: #{inspect(changeset.errors)}"}
+      {:ok, verdict} ->
+        Tribunal.record_audit_event(case_record, "verdict_failed", "judge", %{
+          "verdict_id" => verdict.id,
+          "error" => message,
+          "model" => verdict.model,
+          "prompt_version" => verdict.prompt_version,
+          "policy_version" => verdict.policy_version
+        })
+
+        {:error, verdict}
+
+      {:error, changeset} ->
+        {:error, "could not persist verdict: #{inspect(changeset.errors)}"}
     end
+  end
+
+  # Completed verdicts always record the judgment; a capped verdict
+  # additionally records the policy gate's intervention as its own
+  # event, attributed to the gate rather than the Judge.
+  defp audit_verdict(case_record, verdict) do
+    Tribunal.record_audit_event(
+      case_record,
+      "verdict_completed",
+      "judge",
+      Map.merge(Tribunal.usage_summary(verdict.usage), %{
+        "verdict_id" => verdict.id,
+        "model" => verdict.model,
+        "prompt_version" => verdict.prompt_version,
+        "policy_version" => verdict.policy_version,
+        "snapshot_hash" => verdict.snapshot_hash,
+        "judge_recommendation" => verdict.judge_recommendation,
+        "recommendation" => verdict.recommendation
+      })
+    )
+
+    if verdict.policy_capped do
+      Tribunal.record_audit_event(case_record, "policy_applied", "policy_gate", %{
+        "verdict_id" => verdict.id,
+        "policy_version" => verdict.policy_version,
+        "judge_recommendation" => verdict.judge_recommendation,
+        "recommendation" => verdict.recommendation,
+        "policy_notes" => verdict.policy_notes
+      })
+    end
+
+    :ok
   end
 
   # -- prompts ------------------------------------------------------------------
