@@ -46,7 +46,7 @@ defmodule PatchwritApiWeb.DepsViewsTest do
 
   test "essential table with direct-only filter and search", %{conn: conn} do
     analysis = seed()
-    {:ok, view, html} = live(conn, "/analyses/#{analysis.id}")
+    {:ok, view, html} = live(conn, "/analyses/#{analysis.id}/dependencies")
 
     assert html =~ "Dependency inventory (2 unique)"
     assert html =~ "org.hub:hub:2.0"
@@ -72,7 +72,7 @@ defmodule PatchwritApiWeb.DepsViewsTest do
 
   test "tree view renders introduction chains", %{conn: conn} do
     analysis = seed()
-    {:ok, view, _html} = live(conn, "/analyses/#{analysis.id}")
+    {:ok, view, _html} = live(conn, "/analyses/#{analysis.id}/dependencies")
 
     view
     |> element("button[phx-click='set_deps_view'][phx-value-view='tree']")
