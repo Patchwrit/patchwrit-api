@@ -87,7 +87,8 @@ defmodule PatchwritApiWeb.DashboardTest do
     # Stat card + attention row + badges.
     assert html =~ "policy-capped by incomplete evidence"
     assert html =~ "org.apache.logging.log4j:log4j-core:2.14.1"
-    assert html =~ "Policy: human review"
+    assert html =~ "policy-capped"
+    refute html =~ "Policy: human review"
     assert html =~ "Needs human review"
     assert html =~ "presence: confirmed"
     assert html =~ "exploitability: unknown"

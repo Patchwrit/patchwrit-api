@@ -213,12 +213,10 @@ defmodule PatchwritApiWeb.AnalysisComponents do
 
   attr :verdict, :map, required: true
 
-  @doc "The dark policy-cap marker: louder than the verdict it overruled."
+  @doc "A discreet note that policy capped this verdict; detail lives on the case page."
   def policy_capped_badge(assigns) do
     ~H"""
-    <span :if={@verdict.policy_capped} class="pw-badge pw-policy-badge">
-      Policy: human review
-    </span>
+    <span :if={@verdict.policy_capped} class="pw-policy-note">policy-capped</span>
     """
   end
 
