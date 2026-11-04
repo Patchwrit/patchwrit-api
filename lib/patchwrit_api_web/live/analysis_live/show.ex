@@ -4,25 +4,549 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
   use PatchwritApiWeb, :live_view
 
   alias PatchwritApi.Analyses
+  alias PatchwritApi.Analyses.DependencyGraph
   alias PatchwritApi.Findings
+  alias PatchwritApi.Tribunal
+  alias PatchwritApi.Tribunal.Triage
+  alias PatchwritApi.Workers.RunTribunalCase
   import PatchwritApiWeb.AnalysisComponents
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
     analysis = Analyses.get_analysis!(id)
+    findings = Findings.list_findings_for_analysis(analysis.id)
+    dependencies = get_in(analysis.result || %{}, ["dependencies"]) || []
+    dep_modules = DependencyGraph.modules(dependencies)
+
+    cases_by_finding =
+      Map.new(Tribunal.list_cases_for_analysis(analysis.id), &{&1.finding_id, &1})
+
+    verdicts_by_case = Tribunal.latest_verdicts_for_analysis(analysis.id)
+    failed_cases = Tribunal.failed_case_ids(analysis.id)
+
+    rows =
+      findings
+      |> Enum.map(fn finding ->
+        case_record = cases_by_finding[finding.id]
+
+        %{
+          finding: finding,
+          case: case_record,
+          verdict: case_record && verdicts_by_case[case_record.id],
+          failed: case_record != nil and MapSet.member?(failed_cases, case_record.id)
+        }
+      end)
+      |> Enum.sort_by(&row_sort_key/1)
+
+    top_outcomes =
+      rows
+      |> Enum.filter(
+        &(&1.verdict &&
+            &1.verdict.recommendation in ~w(remediate_now needs_human_review investigate_usage))
+      )
+      |> Enum.take(3)
 
     {:ok,
      socket
      |> assign(:analysis, analysis)
-     |> assign(:findings, Findings.list_findings_for_analysis(analysis.id))
-     |> assign(:introduced_via, introduced_via_map(analysis))}
+     |> assign(:findings, findings)
+     |> assign(:top_outcomes, top_outcomes)
+     |> assign(:judged_count, map_size(verdicts_by_case))
+     |> assign(:dep_rows, DependencyGraph.aggregate(dependencies))
+     |> assign(:dep_modules, dep_modules)
+     |> assign(:deps_module, List.first(dep_modules))
+     |> assign(:deps_view, "table")
+     |> assign(:deps_direct_only, false)
+     |> assign(:expanded_dep, nil)
+     |> assign(:deps_query, "")
+     |> assign(:deps_limit, 25)
+     |> assign(
+       :vulnerable_coords,
+       MapSet.new(findings, &"#{&1.package_name}:#{&1.package_version}")
+     )
+     |> assign(
+       :vulnerable_finding_ids,
+       Map.new(findings, &{"#{&1.package_name}:#{&1.package_version}", &1.id})
+     )
+     |> assign(:finding_rows, rows)
+     |> assign(:finding_row, nil)
+     |> assign(:finding_opinions, [])
+     |> assign(:audit_events, [])
+     |> assign(:audit_entries, [])
+     |> assign(:audit_groups, [])
+     |> assign(:audit_summary, nil)
+     |> assign(:queued_case_ids, MapSet.new())
+     |> assign(:introduced_via, introduced_via_map(analysis))
+     |> then(fn socket ->
+       if socket.assigns.live_action == :audit do
+         entries = audit_entries(analysis)
+
+         socket
+         |> assign(:audit_entries, entries)
+         |> assign(:audit_groups, audit_groups(entries))
+         |> assign(:audit_summary, audit_summary(entries))
+       else
+         socket
+       end
+     end)}
   end
 
+  # -- audit tab --------------------------------------------------------------
+
+  # The run-wide decision stream: audit events enriched at read time
+  # from the opinion/verdict records they point to, so entries read as
+  # decisions ("Judge proposed X; policy capped it to Y because...")
+  # rather than machine log lines.
+  defp audit_entries(analysis) do
+    events = Tribunal.list_audit_events_for_analysis(analysis.id)
+    cases = Map.new(Tribunal.list_cases_for_analysis(analysis.id), &{&1.id, &1})
+
+    findings =
+      Map.new(Findings.list_findings_for_analysis(analysis.id), &{&1.id, &1})
+
+    opinions = Map.new(Tribunal.list_opinions_for_analysis(analysis.id), &{&1.id, &1})
+    verdicts = Map.new(Tribunal.list_verdicts_for_analysis(analysis.id), &{&1.id, &1})
+
+    Enum.map(events, fn event ->
+      case_record = cases[event.tribunal_case_id]
+      opinion = opinions[event.metadata["opinion_id"]]
+      verdict = verdicts[event.metadata["verdict_id"]]
+
+      %{
+        event: event,
+        case: case_record,
+        finding: case_record && findings[case_record.finding_id],
+        opinion: opinion,
+        verdict: verdict,
+        headline: audit_headline(event, opinion, verdict),
+        story: audit_story(event, opinion, verdict)
+      }
+    end)
+  end
+
+  # One tribunal run = the events of a single case execution, from
+  # queue (or evidence collection) to a terminal event. A retried case
+  # starts a new run; the stream never merges two executions.
+  @audit_terminal_events ~w(tribunal_completed tribunal_failed tribunal_skipped tribunal_cancelled)
+
+  defp audit_groups(entries) do
+    {groups, _open} =
+      Enum.reduce(entries, {[], %{}}, fn entry, {groups, open} ->
+        case_id = entry.event.tribunal_case_id
+
+        {groups, index} =
+          if Map.has_key?(open, case_id) and entry.event.event != "case_created" do
+            {groups, Map.fetch!(open, case_id)}
+          else
+            {groups ++ [%{case: entry.case, finding: entry.finding, entries: []}], length(groups)}
+          end
+
+        groups =
+          List.update_at(groups, index, &%{&1 | entries: &1.entries ++ [entry]})
+
+        open =
+          if entry.event.event in @audit_terminal_events do
+            Map.delete(open, case_id)
+          else
+            Map.put(open, case_id, index)
+          end
+
+        {groups, open}
+      end)
+
+    groups
+    |> Enum.map(fn group ->
+      verdict_entry = Enum.find(group.entries, &(&1.event.event == "verdict_completed"))
+      failed? = Enum.any?(group.entries, &(&1.event.event == "tribunal_failed"))
+
+      outcome =
+        cond do
+          verdict_entry -> {:verdict, verdict_entry.event.metadata["recommendation"]}
+          failed? -> {:failed, nil}
+          true -> {:open, nil}
+        end
+
+      tokens =
+        group.entries
+        |> Enum.map(& &1.event.metadata["total_tokens"])
+        |> Enum.filter(&is_integer/1)
+        |> Enum.sum()
+
+      group
+      |> Map.put(:outcome, outcome)
+      |> Map.put(:tokens, tokens)
+      |> Map.put(:started_at, hd(group.entries).event.inserted_at)
+    end)
+    |> Enum.reverse()
+  end
+
+  defp audit_summary(entries) do
+    events = Enum.map(entries, & &1.event)
+    token_events = Enum.filter(events, &is_integer(&1.metadata["total_tokens"]))
+
+    total_tokens = Enum.sum_by(token_events, & &1.metadata["total_tokens"])
+    prompt_tokens = Enum.sum_by(token_events, &(&1.metadata["prompt_tokens"] || 0))
+    cached_tokens = Enum.sum_by(token_events, &(&1.metadata["cached_tokens"] || 0))
+
+    %{
+      judged: Enum.count(events, &(&1.event == "verdict_completed")),
+      tokens: total_tokens,
+      cached_pct:
+        if(prompt_tokens > 0,
+          do: round(cached_tokens / prompt_tokens * 100),
+          else: nil
+        ),
+      caps: Enum.count(events, &(&1.event == "policy_applied")),
+      failures: Enum.count(events, &(&1.event == "tribunal_failed"))
+    }
+  end
+
+  defp audit_headline(event, opinion, verdict)
+
+  defp audit_headline(%{event: "case_created"}, _opinion, _verdict), do: "Evidence collected"
+  defp audit_headline(%{event: "tribunal_queued"}, _opinion, _verdict), do: "Queued for tribunal"
+  defp audit_headline(%{event: "tribunal_started"}, _opinion, _verdict), do: "Tribunal started"
+
+  defp audit_headline(%{event: "tribunal_skipped"}, _opinion, _verdict),
+    do: "Skipped — already judged"
+
+  defp audit_headline(%{event: "tribunal_cancelled"}, _opinion, _verdict), do: "Cancelled"
+
+  defp audit_headline(%{event: "opinion_completed", actor: actor}, _opinion, _verdict),
+    do: "#{String.capitalize(actor)} argued the case"
+
+  defp audit_headline(%{event: "opinion_failed", actor: actor}, _opinion, _verdict),
+    do: "#{String.capitalize(actor)} opinion failed"
+
+  defp audit_headline(%{event: "verdict_completed"}, _opinion, verdict),
+    do: "Verdict: #{recommendation_label(verdict && verdict.recommendation)}"
+
+  defp audit_headline(%{event: "verdict_failed"}, _opinion, _verdict), do: "Judging failed"
+
+  defp audit_headline(%{event: "policy_applied"}, _opinion, _verdict),
+    do: "Policy capped the verdict"
+
+  defp audit_headline(%{event: "tribunal_completed"}, _opinion, _verdict), do: "Tribunal finished"
+  defp audit_headline(%{event: "tribunal_failed"}, _opinion, _verdict), do: "Tribunal failed"
+  defp audit_headline(%{event: other}, _opinion, _verdict), do: other
+
+  defp audit_story(event, opinion, verdict)
+
+  defp audit_story(%{event: "case_created", metadata: metadata}, _opinion, _verdict) do
+    "Dossier frozen (snapshot #{String.slice(metadata["snapshot_hash"] || "", 0, 12)}…). " <>
+      "Facts only — no model has seen this case yet."
+  end
+
+  defp audit_story(%{event: "tribunal_queued", metadata: metadata}, _opinion, _verdict) do
+    source =
+      case metadata["source"] do
+        "triage" -> "Selected automatically by triage under the per-analysis case cap."
+        "manual" -> "Queued manually."
+        _ -> "Queued."
+      end
+
+    models =
+      if metadata["advocate_model"] do
+        " Advocates: #{metadata["advocate_model"]} · Judge: #{metadata["judge_model"]}."
+      else
+        ""
+      end
+
+    source <> models
+  end
+
+  defp audit_story(%{event: "tribunal_started"}, _opinion, _verdict),
+    do: "Prosecutor, Defender, then Judge — each argued only from the frozen dossier."
+
+  defp audit_story(%{event: "tribunal_skipped"}, _opinion, _verdict),
+    do: "A completed verdict already exists, so nothing was re-argued and nothing was re-spent."
+
+  defp audit_story(%{event: "tribunal_cancelled"}, _opinion, _verdict),
+    do: "The case no longer exists (likely replaced by a rescan). Nothing ran."
+
+  defp audit_story(%{event: "opinion_completed", metadata: metadata}, opinion, _verdict) do
+    summary = if opinion, do: one_line(opinion.summary), else: nil
+
+    facts =
+      [
+        opinion && "#{length(opinion.citations)} evidence citation(s)",
+        opinion && "#{length(opinion.uncertainties)} uncertainty(ies) declared",
+        audit_tokens_part(metadata)
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(" · ")
+
+    [summary, facts] |> Enum.reject(&(&1 in [nil, ""])) |> Enum.join(" — ")
+  end
+
+  defp audit_story(%{event: "opinion_failed", metadata: metadata}, _opinion, _verdict) do
+    "The opinion was recorded as failed and the exchange stopped: #{metadata["error"]}"
+  end
+
+  defp audit_story(%{event: "verdict_completed", metadata: metadata}, _opinion, verdict) do
+    if verdict do
+      dimensions =
+        "Presence #{verdict.presence} · Application relevance #{verdict.application_relevance} · " <>
+          "Exploitability #{verdict.exploitability} · Priority #{verdict.priority}"
+
+      judge_part =
+        if verdict.judge_recommendation != verdict.recommendation do
+          "Judge proposed #{recommendation_label(verdict.judge_recommendation)}; " <>
+            "final recommendation is #{recommendation_label(verdict.recommendation)} (see policy entry). "
+        else
+          "Judge proposed #{recommendation_label(verdict.judge_recommendation)}. "
+        end
+
+      judge_part <> dimensions <> " — " <> one_line(verdict.rationale || "")
+    else
+      "Tokens: #{audit_tokens_part(metadata)}"
+    end
+  end
+
+  defp audit_story(%{event: "verdict_failed", metadata: metadata}, _opinion, _verdict) do
+    "No verdict was produced: #{metadata["error"]} The failure is recorded; re-running reuses any completed opinions."
+  end
+
+  defp audit_story(%{event: "policy_applied", metadata: metadata}, _opinion, _verdict) do
+    notes = metadata["policy_notes"] || []
+
+    "The Judge proposed #{recommendation_label(metadata["judge_recommendation"])}. " <>
+      "Deterministic policy (#{metadata["policy_version"]}) set the final recommendation to " <>
+      "#{recommendation_label(metadata["recommendation"])}" <>
+      if(notes != [], do: " — #{hd(notes)}", else: "") <>
+      " A cap records incomplete evidence; it is not a safety finding."
+  end
+
+  defp audit_story(%{event: "tribunal_completed", metadata: metadata}, _opinion, _verdict) do
+    duration =
+      if metadata["duration_ms"],
+        do: " in #{Float.round(metadata["duration_ms"] / 1000, 1)}s",
+        else: ""
+
+    "Finished#{duration}. Final recommendation: #{recommendation_label(metadata["recommendation"])}."
+  end
+
+  defp audit_story(%{event: "tribunal_failed", metadata: metadata}, _opinion, _verdict) do
+    "Stopped at the #{metadata["stage"]} stage: #{metadata["error"]} " <>
+      "Completed stages are kept; re-running will not re-spend on them."
+  end
+
+  defp audit_story(_event, _opinion, _verdict), do: ""
+
+  defp number(value) when is_integer(value) do
+    value
+    |> Integer.to_string()
+    |> String.replace(~r/(?<=\d)(?=(\d{3})+$)/, ",")
+  end
+
+  defp one_line(text) do
+    text = String.trim(text || "")
+
+    if String.length(text) <= 200 do
+      text
+    else
+      String.slice(text, 0, 197) <> "…"
+    end
+  end
+
+  # The finding detail page resolves its row in handle_params, where the
+  # finding_id route param is available alongside the tab params.
+
+  @impl true
+  def handle_params(params, _uri, socket) do
+    socket =
+      case {socket.assigns.live_action, params["case"], params["finding_id"]} do
+        # Legacy ?case= deep links land on the finding's own page now.
+        {:findings, finding_id, _} when is_binary(finding_id) ->
+          push_navigate(socket,
+            to: ~p"/analyses/#{socket.assigns.analysis.id}/findings/#{finding_id}"
+          )
+
+        {:finding, _, finding_id} when is_binary(finding_id) ->
+          case Enum.find(socket.assigns.finding_rows, &(&1.finding.id == finding_id)) do
+            nil ->
+              socket
+              |> put_flash(:error, "Finding not found on this run")
+              |> push_navigate(to: ~p"/analyses/#{socket.assigns.analysis.id}/findings")
+
+            row ->
+              opinions =
+                case row do
+                  %{case: %{id: case_id}} -> Tribunal.list_opinions_for_case(case_id)
+                  _ -> []
+                end
+
+              audit_events =
+                case row do
+                  %{case: %{id: case_id}} -> Tribunal.list_audit_events_for_case(case_id)
+                  _ -> []
+                end
+
+              socket
+              |> assign(:finding_row, row)
+              |> assign(:finding_opinions, opinions)
+              |> assign(:audit_events, audit_events)
+          end
+
+        _ ->
+          socket
+      end
+
+    socket =
+      if socket.assigns.live_action == :dependencies and is_binary(params["dep"]) do
+        assign(socket, deps_query: params["dep"])
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("set_deps_view", %{"view" => view}, socket)
+      when view in ~w(table tree) do
+    {:noreply, assign(socket, deps_view: view, deps_limit: 25)}
+  end
+
+  def handle_event("toggle_dep", %{"coordinate" => coordinate}, socket) do
+    expanded = if socket.assigns.expanded_dep == coordinate, do: nil, else: coordinate
+    {:noreply, assign(socket, expanded_dep: expanded)}
+  end
+
+  def handle_event("toggle_direct_only", _params, socket) do
+    {:noreply, assign(socket, deps_direct_only: !socket.assigns.deps_direct_only, deps_limit: 25)}
+  end
+
+  def handle_event("deps_search", %{"query" => query}, socket) do
+    {:noreply, assign(socket, deps_query: query, deps_limit: 25)}
+  end
+
+  def handle_event("more_deps", _params, socket) do
+    {:noreply, assign(socket, deps_limit: socket.assigns.deps_limit + 50)}
+  end
+
+  def handle_event("select_deps_module", %{"module" => module}, socket) do
+    {:noreply, assign(socket, deps_module: module)}
+  end
+
+  def handle_event("run_tribunal", %{"id" => case_id}, socket) do
+    case Tribunal.get_case(case_id) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "Tribunal case not found")}
+
+      case_record ->
+        RunTribunalCase.enqueue(case_record)
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "Tribunal queued for this case")
+         |> assign(:queued_case_ids, MapSet.put(socket.assigns.queued_case_ids, case_id))}
+    end
+  end
+
+  # Worst tribunal outcome first; failed attempts next; unjudged last.
+  @recommendation_rank %{
+    "remediate_now" => 0,
+    "needs_human_review" => 1,
+    "investigate_usage" => 2,
+    "schedule_remediation" => 3,
+    "dismiss" => 4
+  }
+
+  defp row_sort_key(%{verdict: %{recommendation: recommendation}, finding: finding}) do
+    {0, Map.get(@recommendation_rank, recommendation, 5), finding.package_name, finding.osv_id}
+  end
+
+  defp row_sort_key(%{failed: true, finding: finding}) do
+    {1, 0, finding.package_name, finding.osv_id}
+  end
+
+  defp row_sort_key(%{case: case_record, finding: finding}) when not is_nil(case_record) do
+    {2, 0, finding.package_name, finding.osv_id}
+  end
+
+  defp row_sort_key(%{finding: finding}) do
+    {3, 0, finding.package_name, finding.osv_id}
+  end
+
+  # Essential table only: vulnerable first, then A-Z. Everything else
+  # about a dependency lives in its expanded detail, not in columns.
+  defp visible_dep_rows(assigns) do
+    rows =
+      assigns.dep_rows
+      |> Enum.filter(&(&1.min_depth >= 1))
+      |> Enum.sort_by(fn row ->
+        {if(MapSet.member?(assigns.vulnerable_coords, row.coordinate), do: 0, else: 1),
+         row.coordinate}
+      end)
+
+    rows =
+      if assigns.deps_direct_only,
+        do: Enum.filter(rows, & &1.direct),
+        else: rows
+
+    query = String.downcase(String.trim(assigns.deps_query))
+
+    if query == "" do
+      rows
+    else
+      Enum.filter(rows, &String.contains?(String.downcase(&1.coordinate), query))
+    end
+  end
+
+  # The introduction path runs root -> ... -> immediate parent. A
+  # one-element path means the parent is the project itself: a direct
+  # dependency. Anything longer names the dependency that pulled it in.
   defp via_label(introduced_via, finding) do
     key = "#{finding.package_name}:#{finding.package_version}"
 
     case Map.get(introduced_via, key) do
-      [_ | _] = path -> "via #{List.last(path)}"
+      [_only] -> "Direct dependency"
+      [_ | _] = path -> "Pulled in by #{List.last(path)}"
+      _ -> nil
+    end
+  end
+
+  # Compact one-line summary of an audit event's metadata for the
+  # timeline: model/versions, token counts, outcome, duration.
+  defp audit_detail(%{metadata: metadata}) do
+    parts =
+      []
+      |> add_part(metadata["model"])
+      |> add_part(metadata["prompt_version"])
+      |> add_part(metadata["policy_version"])
+      |> add_part(audit_tokens_part(metadata))
+      |> add_part(metadata["recommendation"] && "→ #{metadata["recommendation"]}")
+      |> add_part(metadata["duration_ms"] && "#{metadata["duration_ms"]} ms")
+      |> add_part(metadata["source"] && "via #{metadata["source"]}")
+      |> add_part(metadata["error"])
+
+    Enum.join(parts, " · ")
+  end
+
+  defp audit_tokens_part(%{"total_tokens" => total} = metadata) do
+    cached = if metadata["cached_tokens"], do: ", #{metadata["cached_tokens"]} cached", else: ""
+
+    reasoning =
+      if metadata["reasoning_tokens"], do: ", #{metadata["reasoning_tokens"]} reasoning", else: ""
+
+    "#{total} tokens#{cached}#{reasoning}"
+  end
+
+  defp audit_tokens_part(_metadata), do: nil
+
+  defp add_part(parts, nil), do: parts
+  defp add_part(parts, part), do: parts ++ [part]
+
+  defp artifact_name(package_name) do
+    package_name |> String.split(":") |> List.last()
+  end
+
+  defp introduction_chain(introduced_via, finding) do
+    key = "#{finding.package_name}:#{finding.package_version}"
+
+    case Map.get(introduced_via, key) do
+      [_ | _] = path -> Enum.join(path ++ [key], " → ")
       _ -> nil
     end
   end
@@ -36,6 +560,368 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
       path = (dep["introduction_paths"] || []) |> List.first(dep["introduced_via"] || [])
       {"#{dep["group_id"]}:#{dep["artifact_id"]}:#{dep["version"]}", path}
     end)
+  end
+
+  attr :rows, :list, required: true
+  attr :vulnerable, :any, required: true
+  attr :finding_ids, :map, default: %{}
+  attr :analysis_id, :string, default: nil
+  attr :expanded, :string, default: nil
+
+  # Essential columns only: what it is, its scope, whether it is a
+  # finding. Depth/modules/paths live in the expanded detail.
+  defp deps_table(assigns) do
+    ~H"""
+    <div class="pw-table-wrap">
+      <table class="pw-table">
+        <thead>
+          <tr>
+            <th>Dependency</th>
+            <th>Scope</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <%= for row <- @rows do %>
+            <tr>
+              <td data-label="Dependency">
+                <span class="pw-mono">{row.coordinate}</span>
+                <span :if={row.direct} class="pw-badge pw-verdict--investigate">Direct</span>
+              </td>
+              <td data-label="Scope">{Enum.join(row.scopes, ", ")}</td>
+              <td data-label="Status">
+                <a
+                  :if={MapSet.member?(@vulnerable, row.coordinate)}
+                  href={"/analyses/#{@analysis_id}/findings?case=#{@finding_ids[row.coordinate]}"}
+                  class="pw-badge pw-verdict--remediate"
+                >
+                  Vulnerable
+                </a>
+                <span :if={!MapSet.member?(@vulnerable, row.coordinate)} class="pw-muted">—</span>
+              </td>
+              <td>
+                <button
+                  type="button"
+                  class="pw-expand-button"
+                  phx-click="toggle_dep"
+                  phx-value-coordinate={row.coordinate}
+                >
+                  {if @expanded == row.coordinate, do: "Hide", else: "Details"}
+                </button>
+              </td>
+            </tr>
+            <tr :if={@expanded == row.coordinate}>
+              <td colspan="4" class="pw-case-cell">
+                <div class="pw-dep-detail">
+                  <p>
+                    Depth {row.min_depth} (1 = declared directly in a POM)<span :if={
+                      row.module_count > 0
+                    }>
+                      · appears in {row.module_count} module(s)</span>
+                    <span>
+                      · reached by {row.path_count} introduction path(s)
+                    </span>
+                    <span>
+                      · {row.downstream} dependencies sit beneath it
+                    </span>
+                  </p>
+                  <p :if={row.paths != []} class="pw-mono pw-dep-paths">
+                    <span :for={path <- Enum.take(row.paths, 5)}>
+                      {Enum.join(path, " → ")}<br />
+                    </span>
+                    <span :if={length(row.paths) > 5}>…and {length(row.paths) - 5} more paths</span>
+                  </p>
+                </div>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+    """
+  end
+
+  attr :nodes, :list, required: true
+  attr :vulnerable, :any, required: true
+  attr :depth, :integer, default: 0
+
+  defp deps_tree(assigns) do
+    ~H"""
+    <ul class="pw-tree">
+      <li :for={{name, children} <- @nodes}>
+        <details :if={children != []} open={@depth == 0}>
+          <summary>
+            <span class="pw-mono">{name}</span>
+            <span :if={MapSet.member?(@vulnerable, name)} class="pw-badge pw-verdict--remediate">
+              Vulnerable
+            </span>
+          </summary>
+          <.deps_tree nodes={children} vulnerable={@vulnerable} depth={@depth + 1} />
+        </details>
+        <span :if={children == []}>
+          <span class="pw-mono">{name}</span>
+          <span :if={MapSet.member?(@vulnerable, name)} class="pw-badge pw-verdict--remediate">
+            Vulnerable
+          </span>
+        </span>
+      </li>
+    </ul>
+    """
+  end
+
+  # -- tribunal case panel helpers ---------------------------------------------
+
+  defp dossier_for(nil), do: %{}
+
+  defp dossier_for(case_record) do
+    case case_record.dossier_snapshot do
+      snapshot when is_map(snapshot) and snapshot != %{} -> snapshot
+      _ -> case_record.packet || %{}
+    end
+  end
+
+  defp latest_opinion(opinions, role, status) do
+    opinions
+    |> Enum.filter(&(&1.role == role and &1.status == status))
+    |> List.last()
+  end
+
+  defp case_tokens(opinions, verdict) do
+    opinion_tokens = Enum.sum_by(opinions, &(&1.usage["total_tokens"] || 0))
+    verdict_tokens = if verdict, do: verdict.usage["total_tokens"] || 0, else: 0
+    opinion_tokens + verdict_tokens
+  end
+
+  defp triage_reason(case_record) do
+    dossier = dossier_for(case_record)
+    artifact = dossier["artifact"] || %{}
+    advisories = dossier["advisories"] || []
+    severity? = Enum.any?(advisories, &(is_binary(&1["severity"]) and &1["severity"] != ""))
+
+    cond do
+      Triage.eligible?(case_record) ->
+        "Selected by triage; the tribunal has not run yet."
+
+      not severity? ->
+        "Not selected by triage: no severity was reported for this advisory."
+
+      artifact["direct"] != true ->
+        "Not selected by triage: transitive #{artifact["scope"] || "unknown"}-scope dependency."
+
+      true ->
+        "Not selected by triage."
+    end
+  end
+
+  defp graph_text(dossier) do
+    graph = dossier["graph"] || %{}
+
+    cond do
+      graph["complete"] == true ->
+        "complete (#{graph["modules_resolved"]}/#{graph["modules_total"]} modules)"
+
+      is_integer(graph["modules_total"]) ->
+        "partial (#{graph["modules_resolved"]}/#{graph["modules_total"]} modules)"
+
+      true ->
+        "completeness unknown"
+    end
+  end
+
+  defp range_text(range) do
+    events =
+      Enum.map_join(range["events"] || [], ", ", fn event ->
+        cond do
+          event["introduced"] -> "introduced #{event["introduced"]}"
+          event["fixed"] -> "fixed #{event["fixed"]}"
+          event["last_affected"] -> "last affected #{event["last_affected"]}"
+          true -> ""
+        end
+      end)
+
+    "#{range["type"]}: #{events}"
+  end
+
+  attr :case, :map, required: true
+
+  # Collapsed evidence dossier for one case: artifact, advisory ranges,
+  # introduction paths, graph state, and explicit missing context.
+  defp case_dossier(assigns) do
+    assigns = assign(assigns, :dossier, dossier_for(assigns.case))
+
+    ~H"""
+    <details class="pw-dossier">
+      <summary>
+        Evidence dossier · graph {graph_text(@dossier)}<span :if={@case.snapshot_hash}>
+          · snapshot {@case.snapshot_hash}
+        </span>
+      </summary>
+      <dl class="pw-detail-grid">
+        <div class="pw-detail-item">
+          <dt>Artifact</dt>
+          <dd class="pw-mono">
+            {(@dossier["artifact"] || %{})["group_id"]}:{(@dossier["artifact"] || %{})[
+              "artifact_id"
+            ]}:{(@dossier["artifact"] || %{})["resolved_version"]}
+          </dd>
+        </div>
+        <div class="pw-detail-item">
+          <dt>Scope / direct</dt>
+          <dd>
+            {(@dossier["artifact"] || %{})["scope"] || "unknown"} · {if (@dossier["artifact"] ||
+                                                                           %{})["direct"],
+                                                                        do: "direct",
+                                                                        else: "transitive"}
+          </dd>
+        </div>
+        <div :for={advisory <- @dossier["advisories"] || []} class="pw-detail-item">
+          <dt>Advisory {advisory["id"]}</dt>
+          <dd>
+            <span :if={advisory["severity"]}>{advisory["severity"]}<br /></span>
+            <span :for={range <- advisory["affected_ranges"] || []}>
+              {range_text(range)}<br />
+            </span>
+            <span :for={reference <- advisory["references"] || []}>
+              <a href={reference} target="_blank" rel="noreferrer">{reference}</a> <br />
+            </span>
+          </dd>
+        </div>
+        <div class="pw-detail-item">
+          <dt>Introduction paths</dt>
+          <dd class="pw-mono">
+            <span :for={path <- (@dossier["artifact"] || %{})["introduction_paths"] || []}>
+              {Enum.join(path, " → ")}<br />
+            </span>
+            <span :if={((@dossier["artifact"] || %{})["introduction_paths"] || []) == []}>
+              none recorded
+            </span>
+          </dd>
+        </div>
+        <div class="pw-detail-item">
+          <dt>Missing context</dt>
+          <dd>
+            <span :for={item <- @dossier["missing_context"] || []}>{item}<br /></span>
+            <span :if={(@dossier["missing_context"] || []) == []}>none recorded</span>
+          </dd>
+        </div>
+        <div class="pw-detail-item">
+          <dt>Collection</dt>
+          <dd class="pw-mono">
+            worker {(@dossier["collection"] || %{})["worker_image"] || "unknown"}
+          </dd>
+        </div>
+      </dl>
+    </details>
+    """
+  end
+
+  attr :row, :map, required: true
+  attr :opinions, :list, default: []
+  attr :queued, :boolean, default: false
+
+  # The full tribunal case for one finding: verdict dimensions, both
+  # arguments with evidence, the dossier, and measured spend.
+  defp case_panel(assigns) do
+    ~H"""
+    <%= cond do %>
+      <% @row.verdict -> %>
+        <div class="pw-case-panel">
+          <div :if={@row.verdict.policy_capped} class="pw-policy-banner">
+            <strong>POLICY OVERRIDE — HUMAN REVIEW REQUIRED</strong>
+            <span :for={note <- @row.verdict.policy_notes}>{note}</span>
+            <span>
+              Judge proposed: {recommendation_label(@row.verdict.judge_recommendation)}
+            </span>
+          </div>
+
+          <div class="pw-dimension-grid">
+            <div class="pw-dimension">
+              <span>Presence</span><strong>{@row.verdict.presence}</strong>
+            </div>
+            <div class="pw-dimension">
+              <span>Application relevance</span>
+              <strong>{@row.verdict.application_relevance}</strong>
+            </div>
+            <div class="pw-dimension">
+              <span>Exploitability</span><strong>{@row.verdict.exploitability}</strong>
+            </div>
+            <div class="pw-dimension">
+              <span>Priority</span><strong>{@row.verdict.priority}</strong>
+            </div>
+            <div class="pw-dimension">
+              <span>Recommendation</span>
+              <strong>{recommendation_label(@row.verdict.recommendation)}</strong>
+            </div>
+          </div>
+
+          <h3>Judge rationale</h3>
+          <p class="pw-rationale">{@row.verdict.rationale}</p>
+
+          <div class="pw-argument-grid">
+            <div :for={role <- ["prosecutor", "defender"]} class="pw-argument-panel">
+              <h3>{String.capitalize(role)}</h3>
+              <%= cond do %>
+                <% opinion = latest_opinion(@opinions, role, "completed") -> %>
+                  <p>{opinion.summary}</p>
+                  <div class="pw-chip-row">
+                    <span :for={argument <- opinion.arguments} class="pw-chip-group">
+                      <span
+                        :for={evidence_id <- argument["evidence_ids"]}
+                        class="pw-evidence-chip"
+                      >
+                        {evidence_id}
+                      </span>
+                    </span>
+                  </div>
+                  <p :if={opinion.uncertainties != []} class="pw-uncertainties">
+                    Uncertainties: {Enum.join(opinion.uncertainties, "; ")}
+                  </p>
+                <% opinion = latest_opinion(@opinions, role, "failed") -> %>
+                  <p class="pw-failed-note">
+                    Opinion failed: {opinion.error}
+                  </p>
+                <% true -> %>
+                  <p class="pw-muted">No opinion recorded.</p>
+              <% end %>
+            </div>
+          </div>
+
+          <.case_dossier case={@row.case} />
+          <p class="pw-spend">
+            Judge model: {@row.verdict.model} · {case_tokens(@opinions, @row.verdict)} tokens measured for this case (advocates + judge)
+          </p>
+        </div>
+      <% @row.case -> %>
+        <div class="pw-case-panel">
+          <p :if={@row.failed} class="pw-failed-note">
+            The tribunal attempted this case and failed. The failure is
+            recorded on the case; re-running reuses any completed stages.
+          </p>
+          <p :if={!@row.failed} class="pw-rationale">
+            Evidence ready. This case has not been argued yet. {triage_reason(@row.case)}
+          </p>
+          <span :if={@queued} class="pw-badge pw-badge--running">Queued</span>
+          <button
+            :if={!@queued}
+            type="button"
+            class="pw-run-button"
+            phx-click="run_tribunal"
+            phx-value-id={@row.case.id}
+          >
+            {if @row.failed, do: "Re-run tribunal", else: "Run tribunal"}
+          </button>
+          <.case_dossier case={@row.case} />
+        </div>
+      <% true -> %>
+        <div class="pw-case-panel">
+          <p class="pw-rationale">
+            No dossier yet — the Investigator has not built a case for this
+            finding. Cases are built automatically after the OSV scan.
+          </p>
+        </div>
+    <% end %>
+    """
   end
 
   @impl true
@@ -53,7 +939,37 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           <.cleanup_badge status={@analysis.machine_cleanup_status} />
         </div>
 
-        <dl class="pw-detail-grid">
+        <nav class="pw-run-tabs" aria-label="Run sections">
+          <.link
+            navigate={~p"/analyses/#{@analysis.id}"}
+            class={["pw-run-tab", @live_action == :overview && "pw-run-tab--active"]}
+          >
+            Overview
+          </.link>
+          <.link
+            navigate={~p"/analyses/#{@analysis.id}/findings"}
+            class={[
+              "pw-run-tab",
+              @live_action in [:findings, :finding] && "pw-run-tab--active"
+            ]}
+          >
+            Findings ({length(@findings)})
+          </.link>
+          <.link
+            navigate={~p"/analyses/#{@analysis.id}/dependencies"}
+            class={["pw-run-tab", @live_action == :dependencies && "pw-run-tab--active"]}
+          >
+            Dependencies ({length(@dep_rows)})
+          </.link>
+          <.link
+            navigate={~p"/analyses/#{@analysis.id}/audit"}
+            class={["pw-run-tab", @live_action == :audit && "pw-run-tab--active"]}
+          >
+            Audit
+          </.link>
+        </nav>
+
+        <dl :if={@live_action == :overview} class="pw-detail-grid">
           <div class="pw-detail-item">
             <dt>Analysis ID</dt>
             <dd class="pw-mono">{@analysis.id}</dd>
@@ -91,7 +1007,10 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           <span :if={@analysis.error_message}>{@analysis.error_message}</span>
         </div>
 
-        <section :if={@analysis.result && @analysis.result["repository"]} class="pw-result">
+        <section
+          :if={@live_action == :overview && @analysis.result && @analysis.result["repository"]}
+          class="pw-result"
+        >
           <div class="pw-result-head">
             <div>
               <span class="pw-panel-kicker">Checkout evidence</span>
@@ -113,13 +1032,51 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           </dl>
         </section>
 
-        <section :if={@analysis.result && @analysis.result["dependencies"]} class="pw-result">
+        <section :if={@live_action == :overview} class="pw-result">
           <div class="pw-result-head">
             <div>
-              <span class="pw-panel-kicker">Maven graph</span>
-              <h2>Dependencies ({length(@analysis.result["dependencies"])})</h2>
+              <span class="pw-panel-kicker">Tribunal</span>
+              <h2>Outcome summary</h2>
             </div>
-            <p>Effective graph from the pinned checkout. First 50 shown.</p>
+            <p>
+              {length(@findings)} findings · {@judged_count}/{length(@finding_rows)} cases judged · {length(
+                @dep_rows
+              )} unique dependencies. Full detail lives under Findings.
+            </p>
+          </div>
+          <p :if={@top_outcomes == []} class="pw-muted">
+            No tribunal verdicts need action on this run yet.
+          </p>
+          <ul :if={@top_outcomes != []} class="pw-analysis-list">
+            <li :for={row <- @top_outcomes} class="pw-analysis-row">
+              <.link
+                navigate={~p"/analyses/#{@analysis.id}/findings?case=#{row.finding.id}"}
+                class="pw-repo-link"
+              >
+                {row.finding.package_name}:{row.finding.package_version}
+              </.link>
+              <div class="pw-meta">
+                <span class="pw-mono">{row.finding.osv_id}</span>
+                <.policy_capped_badge verdict={row.verdict} />
+                <.verdict_badge recommendation={row.verdict.recommendation} />
+              </div>
+            </li>
+          </ul>
+        </section>
+
+        <section
+          :if={@live_action == :dependencies && @analysis.result && @analysis.result["dependencies"]}
+          class="pw-result"
+        >
+          <div class="pw-result-head">
+            <div>
+              <span class="pw-panel-kicker">Software bill of materials</span>
+              <h2>Dependency inventory ({length(@dep_rows)} unique)</h2>
+            </div>
+            <p>
+              {length(@analysis.result["dependencies"])} resolved entries across {length(@dep_modules)} modules. Impact = module spread and introduction-path fan-in (build-graph
+              structure, not runtime usage).
+            </p>
             <p :if={@analysis.result["graph"] && @analysis.result["graph"]["complete"]}>
               Graph complete ({@analysis.result["graph"]["modules_resolved"]}/{@analysis.result[
                 "graph"
@@ -134,27 +1091,124 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
               Legacy result — graph completeness unknown.
             </p>
           </div>
-          <ul class="pw-analysis-list">
-            <li :for={dep <- Enum.take(@analysis.result["dependencies"], 50)} class="pw-analysis-row">
-              <span class="pw-mono">{dep["group_id"]}:{dep["artifact_id"]}:{dep["version"]}</span>
-              <div class="pw-meta">
-                <span>depth {dep["depth"]}</span>
-                <span :if={dep["scope"]}>scope {dep["scope"]}</span>
-                <span :if={dep["module"]}>module {dep["module"]}</span>
-                <span>via {(dep["introduction_paths"] || []) |> List.first([]) |> List.last()}</span>
-              </div>
-            </li>
-          </ul>
+
+          <div class="pw-sbom-summary">
+            <span>
+              <strong>Graph</strong> {case @analysis.result["graph"] do
+                %{"complete" => true} = g ->
+                  "complete (#{g["modules_resolved"]}/#{g["modules_total"]} modules)"
+
+                %{} = g ->
+                  "partial (#{g["modules_resolved"]}/#{g["modules_total"]} modules)"
+
+                _ ->
+                  "completeness unknown"
+              end}
+            </span>
+            <span><strong>Unique</strong> {length(@dep_rows)}</span>
+            <span>
+              <strong>Direct</strong> {Enum.count(@dep_rows, & &1.direct)}
+            </span>
+            <span><strong>Vulnerable</strong> {MapSet.size(@vulnerable_coords)}</span>
+            <a href={"/analyses/#{@analysis.id}/sbom"} class="pw-expand-button" download>
+              Download SBOM (CycloneDX)
+            </a>
+          </div>
+
+          <div class="pw-deps-controls">
+            <div class="pw-tabs" role="tablist" aria-label="Dependency views">
+              <button
+                :for={
+                  {view, label} <- [
+                    {"table", "Table"},
+                    {"tree", "Tree"}
+                  ]
+                }
+                type="button"
+                class={["pw-tab", @deps_view == view && "pw-tab--active"]}
+                phx-click="set_deps_view"
+                phx-value-view={view}
+              >
+                {label}
+              </button>
+            </div>
+            <button
+              :if={@deps_view != "tree"}
+              type="button"
+              class={["pw-tab", @deps_direct_only && "pw-tab--active"]}
+              phx-click="toggle_direct_only"
+              aria-pressed={@deps_direct_only}
+            >
+              Direct only
+            </button>
+            <form phx-change="deps_search" class="pw-deps-search">
+              <input
+                type="text"
+                name="query"
+                value={@deps_query}
+                placeholder="Filter by coordinate…"
+                phx-debounce="200"
+              />
+            </form>
+          </div>
+
+          <p class="pw-view-note">
+            <%= if @deps_view == "tree" do %>
+              Introduction chains for one module, in dependency:tree style.
+            <% else %>
+              Every unique dependency, vulnerable first. Details hold depth, modules, and
+              the introduction paths behind each row.
+            <% end %>
+          </p>
+
+          <%= if @deps_view == "tree" do %>
+            <div :if={length(@dep_modules) > 1} class="pw-module-chips">
+              <button
+                :for={module <- @dep_modules}
+                type="button"
+                class={["pw-tab", @deps_module == module && "pw-tab--active"]}
+                phx-click="select_deps_module"
+                phx-value-module={module}
+              >
+                {module}
+              </button>
+            </div>
+            <.deps_tree
+              nodes={DependencyGraph.tree(@analysis.result["dependencies"], @deps_module)}
+              vulnerable={@vulnerable_coords}
+            />
+          <% else %>
+            <% rows = visible_dep_rows(assigns) %>
+            <p class="pw-count">
+              Showing {min(@deps_limit, length(rows))} of {length(rows)} unique dependencies
+            </p>
+            <.deps_table
+              rows={Enum.take(rows, @deps_limit)}
+              vulnerable={@vulnerable_coords}
+              finding_ids={@vulnerable_finding_ids}
+              analysis_id={@analysis.id}
+              expanded={@expanded_dep}
+            />
+            <button
+              :if={length(rows) > @deps_limit}
+              type="button"
+              class="pw-expand-button"
+              phx-click="more_deps"
+            >
+              Show more
+            </button>
+          <% end %>
         </section>
 
-        <section :if={@analysis.status == "completed"} class="pw-result">
+        <section :if={@live_action == :findings && @analysis.status == "completed"} class="pw-result">
           <div class="pw-result-head">
             <div>
-              <span class="pw-panel-kicker">OSV scan</span>
+              <span class="pw-panel-kicker">OSV scan + tribunal</span>
               <h2>Findings ({length(@findings)})</h2>
             </div>
             <p :if={@analysis.osv_scanned_at}>
               Scanned {Calendar.strftime(@analysis.osv_scanned_at, "%Y-%m-%d %H:%M:%S UTC")} against OSV.
+              Select a finding to see its tribunal case.
             </p>
             <p :if={!@analysis.osv_scanned_at}>
               Not yet scanned. The scan runs automatically after a completed run.
@@ -163,29 +1217,274 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           <p :if={@analysis.osv_scanned_at && @findings == []}>
             No known vulnerabilities in the scanned dependencies.
           </p>
-          <ul class="pw-analysis-list">
-            <li :for={finding <- @findings} class="pw-analysis-row">
-              <span class="pw-mono">{finding.package_name}:{finding.package_version}</span>
-              <span :if={finding.summary}>{finding.summary}</span>
-              <div class="pw-meta">
-                <span>{finding.osv_id}</span>
-                <span :for={alias_name <- finding.aliases}>{alias_name}</span>
-                <span :if={finding.severity}>{finding.severity}</span>
-                <span>
-                  {if finding.fixed_versions == [],
-                    do: "no fix published",
-                    else: "fixed in #{Enum.join(finding.fixed_versions, ", ")}"}
-                </span>
-                <span :if={via_label(@introduced_via, finding)}>
-                  {via_label(@introduced_via, finding)}
-                </span>
-              </div>
+          <div :if={@findings != []} class="pw-table-wrap">
+            <table class="pw-table">
+              <thead>
+                <tr>
+                  <th>Package</th>
+                  <th>Advisory</th>
+                  <th>Severity</th>
+                  <th>Fix</th>
+                  <th>Tribunal status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <%= for row <- @finding_rows do %>
+                  <tr>
+                    <td data-label="Package">
+                      <span class="pw-artifact">{artifact_name(row.finding.package_name)}</span>
+                      <span class="pw-version">{row.finding.package_version}</span>
+                      <div class="pw-repo-sub pw-mono">
+                        {row.finding.package_name}:{row.finding.package_version}
+                      </div>
+                      <div :if={row.finding.summary} class="pw-repo-sub">{row.finding.summary}</div>
+                      <div :if={via_label(@introduced_via, row.finding)} class="pw-repo-sub">
+                        {via_label(@introduced_via, row.finding)}
+                      </div>
+                    </td>
+                    <td data-label="Advisory">
+                      <span class="pw-mono">{row.finding.osv_id}</span>
+                      <div :for={alias_name <- row.finding.aliases} class="pw-repo-sub">
+                        {alias_name}
+                      </div>
+                    </td>
+                    <td data-label="Severity">
+                      <span :if={row.finding.severity}>{row.finding.severity}</span>
+                      <span :if={!row.finding.severity} class="pw-muted">not reported</span>
+                    </td>
+                    <td data-label="Fix">
+                      {if row.finding.fixed_versions == [],
+                        do: "no fix published",
+                        else: "fixed in #{Enum.join(row.finding.fixed_versions, ", ")}"}
+                    </td>
+                    <td data-label="Tribunal status">
+                      <%= cond do %>
+                        <% row.verdict -> %>
+                          <div class="pw-status-cell">
+                            <.verdict_badge recommendation={row.verdict.recommendation} />
+                            <.policy_capped_badge verdict={row.verdict} />
+                          </div>
+                        <% MapSet.member?(@queued_case_ids, row.case && row.case.id) -> %>
+                          <span class="pw-badge pw-badge--running">Queued</span>
+                        <% row.failed -> %>
+                          <span class="pw-badge pw-badge--failed">Failed</span>
+                        <% row.case -> %>
+                          <span class="pw-muted">Not judged</span>
+                        <% true -> %>
+                          <span class="pw-muted">No dossier yet</span>
+                      <% end %>
+                    </td>
+                    <td>
+                      <.link
+                        navigate={~p"/analyses/#{@analysis.id}/findings/#{row.finding.id}"}
+                        class="pw-expand-button"
+                      >
+                        View case
+                      </.link>
+                    </td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section :if={@live_action == :finding && @finding_row} class="pw-result">
+          <.link navigate={~p"/analyses/#{@analysis.id}/findings"} class="pw-back-link">
+            ← Back to findings
+          </.link>
+          <div class="pw-result-head">
+            <div>
+              <span class="pw-panel-kicker">Finding</span>
+              <h2>
+                {artifact_name(@finding_row.finding.package_name)} {@finding_row.finding.package_version}
+              </h2>
+            </div>
+            <div :if={@finding_row.verdict} class="pw-status-cell">
+              <.verdict_badge recommendation={@finding_row.verdict.recommendation} />
+              <.policy_capped_badge verdict={@finding_row.verdict} />
+            </div>
+          </div>
+
+          <dl class="pw-detail-grid">
+            <div class="pw-detail-item">
+              <dt>Package</dt>
+              <dd class="pw-mono">
+                {@finding_row.finding.package_name}:{@finding_row.finding.package_version}
+              </dd>
+            </div>
+            <div class="pw-detail-item">
+              <dt>Advisory</dt>
+              <dd class="pw-mono">
+                {@finding_row.finding.osv_id}
+                <span :for={alias_name <- @finding_row.finding.aliases}><br />{alias_name}</span>
+              </dd>
+            </div>
+            <div class="pw-detail-item">
+              <dt>Severity</dt>
+              <dd>{@finding_row.finding.severity || "not reported"}</dd>
+            </div>
+            <div class="pw-detail-item">
+              <dt>Fix</dt>
+              <dd>
+                {if @finding_row.finding.fixed_versions == [],
+                  do: "no fix published",
+                  else: "fixed in #{Enum.join(@finding_row.finding.fixed_versions, ", ")}"}
+              </dd>
+            </div>
+            <div :if={@finding_row.finding.summary} class="pw-detail-item">
+              <dt>Summary</dt>
+              <dd>{@finding_row.finding.summary}</dd>
+            </div>
+            <div
+              :if={introduction_chain(@introduced_via, @finding_row.finding)}
+              class="pw-detail-item"
+            >
+              <dt>How it got in</dt>
+              <dd class="pw-mono">{introduction_chain(@introduced_via, @finding_row.finding)}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section :if={@live_action == :finding && @finding_row} class="pw-result">
+          <div class="pw-result-head">
+            <div>
+              <span class="pw-panel-kicker">Tribunal</span>
+              <h2>Case</h2>
+            </div>
+          </div>
+          <.case_panel
+            row={@finding_row}
+            opinions={@finding_opinions}
+            queued={MapSet.member?(@queued_case_ids, @finding_row.case && @finding_row.case.id)}
+          />
+        </section>
+
+        <section :if={@live_action == :finding && @finding_row} class="pw-result">
+          <div class="pw-result-head">
+            <div>
+              <span class="pw-panel-kicker">Audit</span>
+              <h2>Timeline</h2>
+            </div>
+            <p>Every recorded decision on this case, in order.</p>
+          </div>
+          <p :if={@audit_events == []} class="pw-muted">
+            No audit events recorded for this case yet. Cases investigated or
+            judged before the audit trail existed have no timeline; new
+            activity is recorded as it happens.
+          </p>
+          <ol :if={@audit_events != []} class="pw-audit-list">
+            <li :for={event <- @audit_events} class="pw-audit-item">
+              <span class="pw-audit-time">
+                {Calendar.strftime(event.inserted_at, "%Y-%m-%d %H:%M:%S")}
+              </span>
+              <span class="pw-audit-event">{event.event}</span>
+              <span class="pw-audit-actor">{event.actor}</span>
+              <span :if={audit_detail(event) != ""} class="pw-audit-detail">
+                {audit_detail(event)}
+              </span>
             </li>
-          </ul>
+          </ol>
+        </section>
+
+        <section :if={@live_action == :audit} class="pw-result">
+          <div class="pw-result-head">
+            <div>
+              <span class="pw-panel-kicker">Audit</span>
+              <h2>Decision stream</h2>
+            </div>
+            <p>
+              Every recorded decision on this run, in the order it happened —
+              what was decided, by whom, and why.
+            </p>
+          </div>
+
+          <dl :if={@audit_summary} class="pw-detail-grid">
+            <div class="pw-detail-item">
+              <dt>Cases judged</dt>
+              <dd>{@audit_summary.judged}</dd>
+            </div>
+            <div class="pw-detail-item">
+              <dt>Tokens recorded</dt>
+              <dd>{number(@audit_summary.tokens)}</dd>
+            </div>
+            <div class="pw-detail-item">
+              <dt>Input served from cache</dt>
+              <dd>
+                {if @audit_summary.cached_pct != nil,
+                  do: "#{@audit_summary.cached_pct}%",
+                  else: "not measured yet"}
+              </dd>
+            </div>
+            <div class="pw-detail-item">
+              <dt>Policy caps</dt>
+              <dd>{@audit_summary.caps}</dd>
+            </div>
+            <div class="pw-detail-item">
+              <dt>Failed runs</dt>
+              <dd>{@audit_summary.failures}</dd>
+            </div>
+          </dl>
+
+          <p :if={@audit_entries == []} class="pw-muted">
+            No audit events recorded for this run yet. Cases investigated or
+            judged before the audit trail existed have no stream; new
+            tribunal activity is recorded as it happens.
+          </p>
+
+          <div :if={@audit_groups != []} class="pw-audit-groups">
+            <section :for={group <- @audit_groups} class="pw-audit-group">
+              <header class="pw-audit-group-head">
+                <div>
+                  <.link
+                    :if={group.finding}
+                    navigate={~p"/analyses/#{@analysis.id}/findings/#{group.finding.id}"}
+                    class="pw-audit-group-title"
+                  >
+                    {group.finding.package_name}:{group.finding.package_version}
+                  </.link>
+                  <span :if={group.finding} class="pw-audit-group-sub">
+                    {group.finding.osv_id} · started {Calendar.strftime(
+                      group.started_at,
+                      "%Y-%m-%d %H:%M:%S"
+                    )}
+                  </span>
+                </div>
+                <div class="pw-audit-group-stats">
+                  <%= case group.outcome do %>
+                    <% {:verdict, recommendation} -> %>
+                      <.verdict_badge recommendation={recommendation} />
+                    <% {:failed, _} -> %>
+                      <span class="pw-badge pw-badge--failed">Failed</span>
+                    <% {:open, _} -> %>
+                      <span class="pw-badge pw-badge--running">In progress</span>
+                  <% end %>
+                  <span class="pw-audit-group-tokens">{number(group.tokens)} tokens</span>
+                </div>
+              </header>
+
+              <ol class="pw-audit-list">
+                <li :for={entry <- group.entries} class="pw-audit-item pw-audit-entry">
+                  <div class="pw-audit-entry-head">
+                    <span class="pw-audit-time">
+                      {Calendar.strftime(entry.event.inserted_at, "%H:%M:%S")}
+                    </span>
+                    <strong class="pw-audit-headline">{entry.headline}</strong>
+                    <span class="pw-audit-actor">{entry.event.actor}</span>
+                  </div>
+                  <p :if={entry.story != ""} class="pw-audit-story">{entry.story}</p>
+                </li>
+              </ol>
+            </section>
+          </div>
         </section>
 
         <section
-          :if={@analysis.timings != %{} or (@analysis.result && @analysis.result["graph"])}
+          :if={
+            @live_action == :overview and
+              (@analysis.timings != %{} or (@analysis.result && @analysis.result["graph"]))
+          }
           class="pw-result"
         >
           <div class="pw-result-head">
@@ -232,7 +1531,7 @@ defmodule PatchwritApiWeb.AnalysisLive.Show do
           </ul>
         </section>
 
-        <section :if={@analysis.result} class="pw-result">
+        <section :if={@live_action == :overview && @analysis.result} class="pw-result">
           <div class="pw-result-head">
             <div>
               <span class="pw-panel-kicker">Worker evidence</span>

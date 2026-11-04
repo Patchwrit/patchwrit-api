@@ -49,15 +49,18 @@ defmodule PatchwritApi.Workers.RunTribunalCaseTest do
 
     Req.Test.stub(@stub, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
-      system = hd(Jason.decode!(body)["messages"])["content"]
+      payload = Jason.decode!(body)
+      system = payload["instructions"] || ""
 
       content =
         if String.contains?(system, "You are the Judge"), do: @verdict_json, else: @opinion_json
 
       Req.Test.json(conn, %{
         "model" => "stub-model",
-        "choices" => [%{"message" => %{"role" => "assistant", "content" => content}}],
-        "usage" => %{"total_tokens" => 10}
+        "output" => [
+          %{"type" => "message", "content" => [%{"type" => "output_text", "text" => content}]}
+        ],
+        "usage" => %{"input_tokens" => 9, "output_tokens" => 1, "total_tokens" => 10}
       })
     end)
 
@@ -109,6 +112,22 @@ defmodule PatchwritApi.Workers.RunTribunalCaseTest do
     assert [verdict] = Tribunal.list_verdicts_for_case(case_record.id)
     assert verdict.status == "completed"
     assert Tribunal.get_case(case_record.id).status == "verdict_ready"
+
+    # The whole run is on the audit trail, in order.
+    event_names =
+      case_record.id
+      |> Tribunal.list_audit_events_for_case()
+      |> Enum.map(& &1.event)
+
+    assert event_names == [
+             "case_created",
+             "tribunal_started",
+             "opinion_completed",
+             "opinion_completed",
+             "verdict_completed",
+             "policy_applied",
+             "tribunal_completed"
+           ]
 
     # Idempotent: a duplicate job must not re-argue or re-judge.
     assert :ok = RunTribunalCase.perform(job)

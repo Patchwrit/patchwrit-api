@@ -24,34 +24,63 @@ defmodule PatchwritApi.Meta.ClientTest do
     :ok
   end
 
-  test "sends a chat completion with bearer auth and returns content + usage" do
+  defp responses_json(conn, text, usage \\ %{}) do
+    Req.Test.json(conn, %{
+      "model" => "muse-spark-1.3",
+      "output" => [
+        %{
+          "type" => "message",
+          "role" => "assistant",
+          "content" => [%{"type" => "output_text", "text" => text}]
+        }
+      ],
+      "usage" => usage
+    })
+  end
+
+  test "sends a Responses request with Bearer [REDACTED] and returns content + normalized usage" do
     parent = self()
 
     Req.Test.stub(@stub, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
       send(parent, {:meta_request, conn, Jason.decode!(body)})
 
-      Req.Test.json(conn, %{
-        "model" => "muse-spark-1.3",
-        "choices" => [
-          %{"message" => %{"role" => "assistant", "content" => "pong"}}
-        ],
-        "usage" => %{"prompt_tokens" => 5, "completion_tokens" => 1, "total_tokens" => 6}
+      responses_json(conn, "pong", %{
+        "input_tokens" => 100,
+        "output_tokens" => 6,
+        "total_tokens" => 106,
+        "input_tokens_details" => %{"cached_tokens" => 80},
+        "output_tokens_details" => %{"reasoning_tokens" => 4}
       })
     end)
 
     assert {:ok, result} =
-             Client.complete([%{"role" => "user", "content" => "ping"}])
+             Client.complete(
+               [
+                 %{"role" => "system", "content" => "Be terse."},
+                 %{"role" => "user", "content" => "ping"}
+               ],
+               prompt_cache_key: "case:abc"
+             )
 
     assert result.content == "pong"
     assert result.model == "muse-spark-1.3"
-    assert result.usage["total_tokens"] == 6
+    # Responses usage is normalized to the persisted tribunal shape,
+    # including the cache-hit count.
+    assert result.usage["prompt_tokens"] == 100
+    assert result.usage["completion_tokens"] == 6
+    assert result.usage["total_tokens"] == 106
+    assert result.usage["prompt_tokens_details"]["cached_tokens"] == 80
+    assert result.usage["completion_tokens_details"]["reasoning_tokens"] == 4
 
     assert_received {:meta_request, conn, payload}
-    assert conn.request_path == "/v1/chat/completions"
-    assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer test-key"]
+    assert conn.request_path == "/v1/responses"
+    assert ["Bearer " <> _key] = Plug.Conn.get_req_header(conn, "authorization")
     assert payload["model"] == "muse-spark-1.3"
-    assert payload["messages"] == [%{"role" => "user", "content" => "ping"}]
+    assert payload["instructions"] == "Be terse."
+    assert payload["input"] == [%{"role" => "user", "content" => "ping"}]
+    assert payload["prompt_cache_key"] == "case:abc"
+    assert payload["prompt_cache_retention"] == "in_memory"
   end
 
   test "explicit model option wins (judge model)" do
@@ -59,13 +88,27 @@ defmodule PatchwritApi.Meta.ClientTest do
       {:ok, body, conn} = Plug.Conn.read_body(conn)
       assert Jason.decode!(body)["model"] == "muse-wonder-1.0"
 
-      Req.Test.json(conn, %{
-        "choices" => [%{"message" => %{"content" => "judged"}}]
-      })
+      responses_json(conn, "judged")
     end)
 
     assert {:ok, %{content: "judged"}} =
              Client.complete([%{role: "user", content: "case"}], model: Client.judge_model())
+  end
+
+  test "reasoning items in the output are skipped for the message text" do
+    Req.Test.stub(@stub, fn conn ->
+      Req.Test.json(conn, %{
+        "output" => [
+          %{"type" => "reasoning", "summary" => []},
+          %{
+            "type" => "message",
+            "content" => [%{"type" => "output_text", "text" => "verdict"}]
+          }
+        ]
+      })
+    end)
+
+    assert {:ok, %{content: "verdict"}} = Client.complete([%{"role" => "user", "content" => "x"}])
   end
 
   test "missing API key fails without calling the API" do

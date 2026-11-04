@@ -9,7 +9,9 @@ defmodule PatchwritApi.Tribunal do
   import Ecto.Query, warn: false
 
   alias PatchwritApi.Analyses.Analysis
+  alias PatchwritApi.Log
   alias PatchwritApi.Repo
+  alias PatchwritApi.Tribunal.AuditEvent
   alias PatchwritApi.Tribunal.Case
   alias PatchwritApi.Tribunal.Opinion
   alias PatchwritApi.Tribunal.Verdict
@@ -32,6 +34,98 @@ defmodule PatchwritApi.Tribunal do
     |> Case.changeset(%{"status" => status})
     |> Repo.update()
   end
+
+  @doc """
+  Case IDs (within one analysis) that have a failed opinion or verdict
+  and no completed verdict — the tribunal tried and something failed.
+  """
+  def failed_case_ids(analysis_id) do
+    failed_verdicts =
+      Verdict
+      |> join(:inner, [v], c in Case, on: v.tribunal_case_id == c.id)
+      |> where([v, c], c.analysis_id == ^analysis_id and v.status == "failed")
+      |> select([v], v.tribunal_case_id)
+      |> Repo.all()
+
+    failed_opinions =
+      Opinion
+      |> join(:inner, [o], c in Case, on: o.tribunal_case_id == c.id)
+      |> where([o, c], c.analysis_id == ^analysis_id and o.status == "failed")
+      |> select([o], o.tribunal_case_id)
+      |> Repo.all()
+
+    completed = Map.keys(latest_verdicts_for_analysis(analysis_id))
+
+    MapSet.new(failed_verdicts ++ (failed_opinions -- completed))
+  end
+
+  # -- audit trail ----------------------------------------------------------
+
+  @doc """
+  Appends one audit event for a case. Audit writes must never break
+  the tribunal itself: a failed insert is logged loudly and reported
+  as `{:error, _}` for the caller to ignore or handle, never raised.
+  """
+  def record_audit_event(%Case{} = case_record, event, actor, metadata \\ %{}) do
+    record_audit_event(%{
+      "tribunal_case_id" => case_record.id,
+      "analysis_id" => case_record.analysis_id,
+      "event" => event,
+      "actor" => actor,
+      "metadata" => metadata
+    })
+  end
+
+  def record_audit_event(attrs) when is_map(attrs) do
+    case %AuditEvent{} |> AuditEvent.changeset(attrs) |> Repo.insert() do
+      {:ok, audit_event} ->
+        {:ok, audit_event}
+
+      {:error, changeset} = error ->
+        Log.warning("audit.record_failed", %{
+          event: attrs["event"] || attrs[:event],
+          error: inspect(changeset.errors)
+        })
+
+        error
+    end
+  end
+
+  def list_audit_events_for_case(tribunal_case_id) do
+    AuditEvent
+    |> where(tribunal_case_id: ^tribunal_case_id)
+    |> order_by(asc: :inserted_at)
+    |> Repo.all()
+  end
+
+  def list_audit_events_for_analysis(analysis_id) do
+    AuditEvent
+    |> where(analysis_id: ^analysis_id)
+    |> order_by(asc: :inserted_at)
+    |> Repo.all()
+  end
+
+  @doc """
+  Flattens a persisted provider usage map into the token counts an
+  audit event carries: totals plus the cached (discounted input) and
+  reasoning (thinking output) splits. Absent counts are omitted.
+  """
+  def usage_summary(usage) when is_map(usage) do
+    %{}
+    |> put_present("total_tokens", usage["total_tokens"])
+    |> put_present("prompt_tokens", usage["prompt_tokens"])
+    |> put_present("completion_tokens", usage["completion_tokens"])
+    |> put_present("cached_tokens", get_in(usage, ["prompt_tokens_details", "cached_tokens"]))
+    |> put_present(
+      "reasoning_tokens",
+      get_in(usage, ["completion_tokens_details", "reasoning_tokens"])
+    )
+  end
+
+  def usage_summary(_usage), do: %{}
+
+  defp put_present(map, _key, nil), do: map
+  defp put_present(map, key, value), do: Map.put(map, key, value)
 
   @doc "Persists one advocate opinion (completed or failed) for a case."
   def create_opinion(attrs) do
@@ -70,6 +164,24 @@ defmodule PatchwritApi.Tribunal do
     %Verdict{}
     |> Verdict.changeset(attrs)
     |> Repo.insert()
+  end
+
+  @doc "All opinions across an analysis's cases, for audit enrichment."
+  def list_opinions_for_analysis(analysis_id) do
+    Opinion
+    |> join(:inner, [o], c in Case, on: o.tribunal_case_id == c.id)
+    |> where([o, c], c.analysis_id == ^analysis_id)
+    |> order_by(asc: :inserted_at)
+    |> Repo.all()
+  end
+
+  @doc "All verdicts across an analysis's cases, for audit enrichment."
+  def list_verdicts_for_analysis(analysis_id) do
+    Verdict
+    |> join(:inner, [v], c in Case, on: v.tribunal_case_id == c.id)
+    |> where([v, c], c.analysis_id == ^analysis_id)
+    |> order_by(asc: :inserted_at)
+    |> Repo.all()
   end
 
   def list_verdicts_for_case(tribunal_case_id) do

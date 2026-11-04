@@ -45,7 +45,8 @@ if System.get_env("MODEL_API_KEY") do
     api_key: System.get_env("MODEL_API_KEY"),
     base_url: System.get_env("META_MODEL_BASE_URL") || "https://api.meta.ai/v1",
     advocate_model: System.get_env("META_ADVOCATE_MODEL") || "muse-spark-1.3",
-    judge_model: System.get_env("META_JUDGE_MODEL") || "muse-wonder-1.0"
+    judge_model: System.get_env("META_JUDGE_MODEL") || "muse-wonder-1.0",
+    prompt_cache_retention: System.get_env("META_PROMPT_CACHE_RETENTION") || "in_memory"
 end
 
 # Public base URL workers use to call back (tunnel in dev, deployed app in prod).

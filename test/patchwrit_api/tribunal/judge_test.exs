@@ -102,12 +102,25 @@ defmodule PatchwritApi.Tribunal.JudgeTest do
     Req.Test.stub(@stub, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
       payload = Jason.decode!(body)
-      system = hd(payload["messages"])["content"]
+      system = payload["instructions"] || ""
 
       content =
         cond do
           String.contains?(system, "You are the Judge") ->
             case Application.get_env(:patchwrit_api, :judge_stub_mode) do
+              :duplicate_citation ->
+                Jason.encode!(%{
+                  "presence" => "confirmed",
+                  "application_relevance" => "unknown",
+                  "exploitability" => "unknown",
+                  "priority" => "high",
+                  "recommendation" => "remediate_now",
+                  "supporting_evidence_ids" => ["artifact", "advisory:GHSA-jfh8-c2jp-5v3q"],
+                  "counter_evidence_ids" => ["missing_context", "advisory:GHSA-jfh8-c2jp-5v3q"],
+                  "missing_context" => ["code_reachability_not_evaluated"],
+                  "rationale" => "The advisory proves presence, not exploitability."
+                })
+
               :fabricated ->
                 Jason.encode!(%{
                   "presence" => "confirmed",
@@ -131,8 +144,10 @@ defmodule PatchwritApi.Tribunal.JudgeTest do
 
       Req.Test.json(conn, %{
         "model" => "stub-model",
-        "choices" => [%{"message" => %{"role" => "assistant", "content" => content}}],
-        "usage" => %{"total_tokens" => 99}
+        "output" => [
+          %{"type" => "message", "content" => [%{"type" => "output_text", "text" => content}]}
+        ],
+        "usage" => %{"input_tokens" => 90, "output_tokens" => 9, "total_tokens" => 99}
       })
     end)
   end
@@ -180,8 +195,18 @@ defmodule PatchwritApi.Tribunal.JudgeTest do
     # The gate, not the model, has the final word.
     assert verdict.recommendation == "needs_human_review"
     assert verdict.policy_capped == true
+    assert verdict.policy_version == "policy_v1"
     assert verdict.usage["total_tokens"] == 99
     assert Tribunal.get_case(case_record.id).status == "verdict_ready"
+
+    # Audit: judgment and the gate's intervention are separate events.
+    events = Tribunal.list_audit_events_for_case(case_record.id)
+    assert Enum.any?(events, &(&1.event == "verdict_completed" and &1.actor == "judge"))
+    policy_event = Enum.find(events, &(&1.event == "policy_applied"))
+    assert policy_event.actor == "policy_gate"
+    assert policy_event.metadata["policy_version"] == "policy_v1"
+    assert policy_event.metadata["judge_recommendation"] == "remediate_now"
+    assert policy_event.metadata["recommendation"] == "needs_human_review"
   end
 
   test "judge verdict stands when the graph is explicitly complete" do
@@ -192,6 +217,20 @@ defmodule PatchwritApi.Tribunal.JudgeTest do
     assert verdict.recommendation == "remediate_now"
     assert verdict.policy_capped == false
     assert verdict.policy_notes == []
+  end
+
+  test "the same evidence cited for and against is not fabricated" do
+    # Regression: during the step-5 DVJA batch a judge cited one
+    # advisory as both supporting and counter evidence and the
+    # validator flagged the duplicate as fabricated, wasting the
+    # whole case's spend.
+    Application.put_env(:patchwrit_api, :judge_stub_mode, :duplicate_citation)
+    case_record = argued_case()
+
+    assert {:ok, verdict} = Judge.run_verdict(case_record)
+    assert verdict.status == "completed"
+    assert "advisory:GHSA-jfh8-c2jp-5v3q" in verdict.supporting_evidence_ids
+    assert "advisory:GHSA-jfh8-c2jp-5v3q" in verdict.counter_evidence_ids
   end
 
   test "fabricated judge citation persists a failed verdict" do

@@ -40,9 +40,15 @@ defmodule PatchwritApiWeb.Router do
 
     get "/", PageController, :home
     live "/analyses", AnalysisLive.Index
-    live "/analyses/:id", AnalysisLive.Show
+    live "/analyses/:id", AnalysisLive.Show, :overview
+    live "/analyses/:id/findings", AnalysisLive.Show, :findings
+    live "/analyses/:id/findings/:finding_id", AnalysisLive.Show, :finding
+    live "/analyses/:id/dependencies", AnalysisLive.Show, :dependencies
+    live "/analyses/:id/audit", AnalysisLive.Show, :audit
+    get "/analyses/:id/sbom", SbomController, :download
     live "/repositories", RepositoryLive.Index
     live "/runs", AnalysisLive.History
+    live "/repositories/:id", RepositoryLive.Show
   end
 
   # Other scopes may use custom stacks.

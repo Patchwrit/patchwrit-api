@@ -200,16 +200,9 @@ defmodule PatchwritApiWeb.RepositoryLive.Index do
               <tbody>
                 <tr :for={{repository, posture} <- @rows}>
                   <td data-label="Repository">
-                    <.link
-                      :if={posture.latest}
-                      navigate={~p"/analyses/#{posture.latest.id}"}
-                      class="pw-repo-link"
-                    >
+                    <.link navigate={~p"/repositories/#{repository.id}"} class="pw-repo-link">
                       {Repository.display_name(repository)}
                     </.link>
-                    <span :if={!posture.latest} class="pw-repo-link">
-                      {Repository.display_name(repository)}
-                    </span>
                     <div class="pw-repo-sub">
                       {repository.default_ref} · JDK {repository.java_version}<span :if={
                         posture.latest && posture.latest.resolved_sha

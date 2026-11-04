@@ -27,6 +27,13 @@ defmodule PatchwritApi.Analyses do
     |> Repo.all()
   end
 
+  def list_analyses_for_repository(repository_id) do
+    Analysis
+    |> where(repository_id: ^repository_id)
+    |> order_by(desc: :inserted_at)
+    |> Repo.all()
+  end
+
   def get_analysis!(id), do: Repo.get!(Analysis, id)
   def get_analysis(id), do: Repo.get(Analysis, id)
 

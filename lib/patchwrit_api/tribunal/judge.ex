@@ -21,7 +21,7 @@ defmodule PatchwritApi.Tribunal.Judge do
   alias PatchwritApi.Tribunal.PolicyGate
   alias PatchwritApi.Tribunal.Verdict
 
-  @prompt_version "judge_v1"
+  @prompt_version "judge_v2"
 
   def prompt_version, do: @prompt_version
 
@@ -50,15 +50,25 @@ defmodule PatchwritApi.Tribunal.Judge do
       "tribunal_case_id" => case_record.id,
       "model" => model,
       "prompt_version" => @prompt_version,
+      "policy_version" => PolicyGate.version(),
       "snapshot_hash" => hash
     }
 
     if allowed_ids == [] do
-      persist_failed(base, "dossier has no evidence index; nothing is citable", nil, %{})
+      persist_failed(
+        case_record,
+        base,
+        "dossier has no evidence index; nothing is citable",
+        nil,
+        %{}
+      )
     else
       messages = build_messages(dossier, allowed_ids, prosecutor, defender)
 
-      case Client.complete(messages, model: model) do
+      case Client.complete(messages,
+             model: model,
+             prompt_cache_key: "#{@prompt_version}:#{hash}"
+           ) do
         {:ok, %{content: content, usage: usage}} ->
           case parse_and_validate(content, allowed_ids) do
             {:ok, judged} ->
@@ -85,6 +95,7 @@ defmodule PatchwritApi.Tribunal.Judge do
 
               case persist(attrs) do
                 {:ok, verdict} ->
+                  audit_verdict(case_record, verdict)
                   Tribunal.update_case_status(case_record, "verdict_ready")
                   {:ok, verdict}
 
@@ -93,11 +104,11 @@ defmodule PatchwritApi.Tribunal.Judge do
               end
 
             {:error, message} ->
-              persist_failed(base, message, content, usage)
+              persist_failed(case_record, base, message, content, usage)
           end
 
         {:error, message} ->
-          persist_failed(base, message, nil, %{})
+          persist_failed(case_record, base, message, nil, %{})
       end
     end
   end
@@ -116,7 +127,7 @@ defmodule PatchwritApi.Tribunal.Judge do
     end
   end
 
-  defp persist_failed(base, message, raw_content, usage) do
+  defp persist_failed(case_record, base, message, raw_content, usage) do
     attrs =
       Map.merge(base, %{
         "status" => "failed",
@@ -126,9 +137,52 @@ defmodule PatchwritApi.Tribunal.Judge do
       })
 
     case Tribunal.create_verdict(attrs) do
-      {:ok, verdict} -> {:error, verdict}
-      {:error, changeset} -> {:error, "could not persist verdict: #{inspect(changeset.errors)}"}
+      {:ok, verdict} ->
+        Tribunal.record_audit_event(case_record, "verdict_failed", "judge", %{
+          "verdict_id" => verdict.id,
+          "error" => message,
+          "model" => verdict.model,
+          "prompt_version" => verdict.prompt_version,
+          "policy_version" => verdict.policy_version
+        })
+
+        {:error, verdict}
+
+      {:error, changeset} ->
+        {:error, "could not persist verdict: #{inspect(changeset.errors)}"}
     end
+  end
+
+  # Completed verdicts always record the judgment; a capped verdict
+  # additionally records the policy gate's intervention as its own
+  # event, attributed to the gate rather than the Judge.
+  defp audit_verdict(case_record, verdict) do
+    Tribunal.record_audit_event(
+      case_record,
+      "verdict_completed",
+      "judge",
+      Map.merge(Tribunal.usage_summary(verdict.usage), %{
+        "verdict_id" => verdict.id,
+        "model" => verdict.model,
+        "prompt_version" => verdict.prompt_version,
+        "policy_version" => verdict.policy_version,
+        "snapshot_hash" => verdict.snapshot_hash,
+        "judge_recommendation" => verdict.judge_recommendation,
+        "recommendation" => verdict.recommendation
+      })
+    )
+
+    if verdict.policy_capped do
+      Tribunal.record_audit_event(case_record, "policy_applied", "policy_gate", %{
+        "verdict_id" => verdict.id,
+        "policy_version" => verdict.policy_version,
+        "judge_recommendation" => verdict.judge_recommendation,
+        "recommendation" => verdict.recommendation,
+        "policy_notes" => verdict.policy_notes
+      })
+    end
+
+    :ok
   end
 
   # -- prompts ------------------------------------------------------------------
@@ -287,7 +341,11 @@ defmodule PatchwritApi.Tribunal.Judge do
   defp string_list?(value), do: is_list(value) and Enum.all?(value, &is_binary/1)
 
   defp validate_citations(judged, allowed_ids) do
-    cited = judged.supporting_evidence_ids ++ judged.counter_evidence_ids
+    # The same evidence may legitimately appear on both sides (an
+    # advisory can prove presence while not proving exploitability),
+    # so dedupe before subtracting: list subtraction only removes
+    # the first occurrence and would flag the duplicate as fabricated.
+    cited = Enum.uniq(judged.supporting_evidence_ids ++ judged.counter_evidence_ids)
 
     case cited -- allowed_ids do
       [] -> :ok

@@ -46,6 +46,7 @@ defmodule PatchwritApi.Tribunal.Verdict do
     field :rationale, :string
     field :policy_capped, :boolean, default: false
     field :policy_notes, {:array, :string}, default: []
+    field :policy_version, :string
     field :usage, :map, default: %{}
     field :raw_content, :string
     field :error, :string
@@ -80,6 +81,7 @@ defmodule PatchwritApi.Tribunal.Verdict do
       :rationale,
       :policy_capped,
       :policy_notes,
+      :policy_version,
       :usage,
       :raw_content,
       :error

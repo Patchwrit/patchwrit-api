@@ -140,12 +140,14 @@ defmodule PatchwritApiWeb.AnalysisLiveTest do
         }
       ])
 
-    {:ok, _view, html} = live(conn, "/analyses/#{analysis.id}")
+    {:ok, _view, html} = live(conn, "/analyses/#{analysis.id}/findings")
     assert html =~ "Findings (1)"
     assert html =~ "org.apache.logging.log4j:log4j-core:2.14.1"
     assert html =~ "CVE-2021-44228"
     assert html =~ "fixed in 2.17.0"
-    assert html =~ "via com.example:app:1.0"
+    # Single-element introduction path: the project itself depends on it.
+    assert html =~ "Direct dependency"
+    refute html =~ "via com.example:app:1.0"
   end
 
   test "detail page distinguishes scanned-clean from not-yet-scanned", %{conn: conn} do
@@ -156,14 +158,14 @@ defmodule PatchwritApiWeb.AnalysisLiveTest do
         "osv_scanned_at" => DateTime.utc_now() |> DateTime.truncate(:second)
       })
 
-    {:ok, _view, html} = live(conn, "/analyses/#{scanned.id}")
+    {:ok, _view, html} = live(conn, "/analyses/#{scanned.id}/findings")
     assert html =~ "Findings (0)"
     assert html =~ "No known vulnerabilities"
 
     {:ok, unscanned} =
       Analyses.create_analysis(%{"repository_url" => @repo, "status" => "completed"})
 
-    {:ok, _view, html} = live(conn, "/analyses/#{unscanned.id}")
+    {:ok, _view, html} = live(conn, "/analyses/#{unscanned.id}/findings")
     assert html =~ "Not yet scanned"
     refute html =~ "No known vulnerabilities"
   end
