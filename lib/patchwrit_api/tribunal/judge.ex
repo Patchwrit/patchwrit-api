@@ -341,7 +341,11 @@ defmodule PatchwritApi.Tribunal.Judge do
   defp string_list?(value), do: is_list(value) and Enum.all?(value, &is_binary/1)
 
   defp validate_citations(judged, allowed_ids) do
-    cited = judged.supporting_evidence_ids ++ judged.counter_evidence_ids
+    # The same evidence may legitimately appear on both sides (an
+    # advisory can prove presence while not proving exploitability),
+    # so dedupe before subtracting: list subtraction only removes
+    # the first occurrence and would flag the duplicate as fabricated.
+    cited = Enum.uniq(judged.supporting_evidence_ids ++ judged.counter_evidence_ids)
 
     case cited -- allowed_ids do
       [] -> :ok
