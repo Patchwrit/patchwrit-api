@@ -55,13 +55,17 @@ defmodule PatchwritApi.Repositories.Repository do
 
   @doc "Display name: the stored `owner/repo` name, derived or raw URL as fallback."
   def display_name(%__MODULE__{name: name}) when is_binary(name) and name != "", do: name
+  def display_name(%__MODULE__{repository_url: url}), do: name_from_url(url) || url
 
-  def display_name(%__MODULE__{repository_url: url}) do
-    case Regex.run(@github_url_regex, url || "") do
+  @doc "`owner/repo` derived from a GitHub URL, or nil when it does not parse."
+  def name_from_url(url) when is_binary(url) do
+    case Regex.run(@github_url_regex, url) do
       [_, owner, repo | _] -> "#{owner}/#{repo}"
-      _ -> url
+      _ -> nil
     end
   end
+
+  def name_from_url(_url), do: nil
 
   # Prefer the name GitHub reports (handles renames/redirects); the
   # LiveView passes it through when branch fetching already learned it.

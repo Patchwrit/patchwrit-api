@@ -86,6 +86,9 @@ defmodule PatchwritApiWeb.RepoPosture do
     end
   end
 
+  @doc "Most urgent final recommendation among verdicts, or nil when unjudged."
+  def worst_verdict(verdicts), do: worst_recommendation(verdicts)
+
   defp latest_analysis(analyses, repository) do
     Enum.find(analyses, &(&1.repository_id == repository.id))
   end
