@@ -219,8 +219,6 @@ defmodule PatchwritApiWeb.AnalysisLive.Index do
     end
   end
 
-  defp one_line(nil), do: nil
-
   defp one_line(text) do
     if String.length(text) > 220, do: String.slice(text, 0, 220) <> "…", else: text
   end
